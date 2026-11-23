@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Baton — three styles</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 1.45; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .switcher { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #161616; color: #eee; font-size: 13px; }
+  .switcher b { margin-right: 10px; }
+  .switcher button { border: 0; background: none; color: #aaa; padding: 6px 12px; border-radius: 8px; }
+  .switcher button[aria-pressed='true'] { background: #eee; color: #111; font-weight: 600; }
+  .switcher span { margin-left: auto; color: #888; }
+  .option { display: none; min-height: calc(100vh - 44px); }
+  .option.on { display: block; }
+  .shot *, .shot *::before, .shot *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* ======================= 1 · THE WALL (cork pinboard) ======================= */
+  #w {
+    background-color: #b8895a;
+    background-image: radial-gradient(rgba(60,35,10,.18) 1px, transparent 1.6px), radial-gradient(rgba(255,240,210,.12) 1px, transparent 1.6px);
+    background-size: 7px 7px, 11px 11px; background-position: 0 0, 3px 5px;
+    box-shadow: inset 0 0 0 14px #6f4a2c, inset 0 0 0 17px #563821, inset 0 0 60px rgba(0,0,0,.25);
+    padding: 26px 34px 34px; position: relative; overflow: hidden;
+  }
+  .hand { font-family: 'Ink Free', 'Segoe Print', 'Comic Sans MS', cursive; }
+  .w-head { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
+  .w-title { background: #fffdf6; padding: 8px 22px 6px; font-size: 30px; transform: rotate(-1.2deg); box-shadow: 0 6px 12px rgba(0,0,0,.25); position: relative; color: #2a2118; }
+  .w-title::before, .w-title::after { content: ''; position: absolute; top: -10px; width: 64px; height: 22px; background: rgba(240,228,196,.82); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  .w-title::before { left: -18px; transform: rotate(-28deg); } .w-title::after { right: -18px; transform: rotate(24deg); }
+  .polaroids { display: flex; gap: 10px; margin-left: 10px; }
+  .pol { background: #fff; padding: 4px 4px 14px; box-shadow: 0 4px 8px rgba(0,0,0,.3); text-align: center; font-size: 12px; color: #333; }
+  .pol:nth-child(1) { transform: rotate(-5deg); } .pol:nth-child(2) { transform: rotate(4deg); } .pol:nth-child(3) { transform: rotate(-2deg); }
+  .pol i { display: grid; place-items: center; width: 38px; height: 38px; color: #fff; font-style: normal; font-weight: 700; font-size: 18px; margin-bottom: 3px; }
+  .w-grid { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 26px 30px; align-items: start; }
+  .zone-label { display: inline-block; background: rgba(245,236,210,.9); padding: 3px 16px; font-size: 21px; color: #3b2a1a; transform: rotate(-1.5deg); box-shadow: 0 1px 3px rgba(0,0,0,.2); margin: 0 0 14px 6px; }
+  .note { position: relative; padding: 16px 18px 14px; margin: 0 0 22px; box-shadow: 0 12px 20px rgba(0,0,0,.28), 0 2px 3px rgba(0,0,0,.15); color: #2a2118; transform: rotate(var(--r, 0deg)); touch-action: none; cursor: grab; user-select: none; }
+  .note.dragging { cursor: grabbing; box-shadow: 0 22px 34px rgba(0,0,0,.35); z-index: 5; }
+  .note h4 { margin: 0 0 6px; font-family: 'Ink Free', 'Segoe Print', cursive; font-size: 23px; font-weight: 400; line-height: 1.15; }
+  .note p { margin: 0; }
+  .note .small { font-size: 13px; color: #5a4c3c; margin-top: 8px; }
+  .pin::before { content: ''; position: absolute; top: -7px; left: 50%; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff8a7a, #c4281a 60%, #7d140b); box-shadow: 0 3px 4px rgba(0,0,0,.35); }
+  .pin.blue::before { background: radial-gradient(circle at 35% 30%, #8fb4ff, #2550c4 60%, #12286b); }
+  .pin.green::before { background: radial-gradient(circle at 35% 30%, #9ee6b0, #23934a 60%, #0f4d25); }
+  .tape::before { content: ''; position: absolute; top: -12px; left: 50%; width: 90px; height: 24px; margin-left: -45px; background: rgba(240,228,196,.8); transform: rotate(-3deg); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  .yellow { background: #fff27a; } .pink { background: #ffc6c0; } .mint { background: #c9f0d6; } .blue-note { background: #cfe3ff; }
+  .card { background: #fffdf8; background-image: linear-gradient(#e6727a 0 0), repeating-linear-gradient(transparent 0 23px, #cfe0f2 23px 24px); background-size: 100% 2px, 100% 100%; background-repeat: no-repeat, repeat; background-position: 0 38px, 0 40px; }
+  .stamp { display: inline-block; border: 3px solid #c0392b; color: #c0392b; font-family: Bahnschrift, 'Arial Narrow', sans-serif; font-weight: 700; letter-spacing: .08em; padding: 1px 8px; transform: rotate(-7deg); font-size: 13px; margin-bottom: 8px; opacity: .9; }
+  .ink-btn { border: 0; background: none; padding: 2px 0; font-family: 'Ink Free', 'Segoe Print', cursive; font-size: 20px; color: #1f3fae; border-bottom: 2px solid #1f3fae; margin-top: 10px; }
+  .ink-btn:hover { color: #0b2a8c; }
+  .tick { display: flex; align-items: center; gap: 10px; font-family: 'Ink Free', 'Segoe Print', cursive; font-size: 20px; margin-top: 8px; cursor: pointer; }
+  .tick b { width: 22px; height: 22px; border: 2.5px solid #2a2118; border-radius: 3px; display: grid; place-items: center; font-size: 20px; line-height: 1; transform: rotate(-3deg); }
+  .tick.on b::after { content: '✓'; color: #1f7a3a; font-weight: 700; }
+  .caution { position: relative; background: #fff; padding: 0; }
+  .caution .stripe { height: 18px; background: repeating-linear-gradient(-45deg, #ffd21f 0 12px, #1b1b1b 12px 24px); }
+  .caution .body { padding: 12px 16px 14px; }
+  .done-note { opacity: .75; } .done-note h4 { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .washi { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; margin-bottom: 8px; color: #fff; transform: rotate(-2deg); opacity: .92; }
+  .pad { position: absolute; right: 40px; bottom: 34px; width: 150px; height: 120px; }
+  .pad div { position: absolute; inset: 0; background: #fff27a; box-shadow: 0 2px 3px rgba(0,0,0,.2); }
+  .pad div:nth-child(1) { transform: translate(6px, 6px); background: #efe06a; } .pad div:nth-child(2) { transform: translate(3px, 3px); background: #f6e872; }
+  .pad div:nth-child(3) { display: grid; place-items: center; font-size: 22px; cursor: pointer; }
+  #w-string { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+
+  /* ======================= 2 · THE RELAY (lanes and batons) ======================= */
+  #r { background: #f3efe4; color: #111; font-family: Bahnschrift, 'DIN Alternate', 'Arial Narrow', sans-serif; }
+  .r-board { display: flex; align-items: stretch; background: #111; color: #f3efe4; }
+  .r-board .name { padding: 14px 22px; font-size: 26px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; border-right: 1px solid #333; }
+  .r-board .stat { padding: 8px 22px; border-right: 1px solid #333; display: flex; flex-direction: column; justify-content: center; }
+  .r-board .stat b { font-size: 30px; line-height: 1; font-weight: 700; }
+  .r-board .stat span { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #aaa; }
+  .green-t { color: #2fd27a; } .orange-t { color: #ff6a2b; }
+  .r-ask { display: flex; align-items: center; gap: 16px; background: #ff5a1f; color: #111; padding: 12px 22px; font-size: 18px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+  .r-ask .grow { flex: 1; }
+  .r-btn { border: 2px solid #111; background: #111; color: #fff; padding: 8px 16px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-size: 14px; border-radius: 0; transition: transform 100ms; }
+  .r-btn:active { transform: translateY(2px); }
+  .r-btn.light { background: transparent; color: #111; }
+  .track { margin: 18px 22px 0; background: #c45a3b; border: 3px solid #111; position: relative; }
+  .marks { display: grid; grid-template-columns: 230px 1fr 1fr 1fr; color: #fff; font-size: 13px; letter-spacing: .18em; text-transform: uppercase; font-weight: 700; background: #111; }
+  .marks div { padding: 6px 12px; } .marks div + div { border-left: 2px dashed #555; }
+  .lane { display: grid; grid-template-columns: 230px 1fr; min-height: 92px; border-top: 3px solid #fff; position: relative; }
+  .lane:first-of-type { border-top: 0; }
+  .lane-id { background: #111; color: #fff; display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+  .lane-id .num { font-size: 44px; font-weight: 700; line-height: 1; color: #ff5a1f; width: 34px; }
+  .lane-id .who { font-size: 18px; font-weight: 700; text-transform: uppercase; line-height: 1.1; }
+  .lane-id .st { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-top: 3px; }
+  .lane-run { position: relative; background-image: linear-gradient(90deg, transparent calc(33.33% - 1px), rgba(255,255,255,.45) calc(33.33% - 1px) 33.33%, transparent 33.33% calc(66.66% - 1px), rgba(255,255,255,.45) calc(66.66% - 1px) 66.66%, transparent 66.66%); }
+  .lane-run .msg { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: #fff; font-size: 20px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .baton { position: absolute; top: 50%; transform: translate(-50%, -50%); left: var(--at); display: flex; align-items: center; background: #fff; border: 3px solid #111; border-radius: 999px; padding: 6px 14px 6px 8px; gap: 10px; box-shadow: 4px 4px 0 #111; white-space: nowrap; }
+  .baton .cap { width: 16px; height: 30px; border-radius: 8px; background: repeating-linear-gradient(0deg, #111 0 4px, #ffd21f 4px 8px); }
+  .baton.paused .cap { background: repeating-linear-gradient(0deg, #111 0 4px, #ff5a1f 4px 8px); }
+  .baton b { font-size: 16px; text-transform: uppercase; letter-spacing: .02em; }
+  .baton small { display: block; font-size: 12px; color: #555; letter-spacing: .06em; text-transform: uppercase; }
+  .baton.flying { transition: left 650ms cubic-bezier(.65,0,.35,1), top 650ms cubic-bezier(.16,1,.3,1); }
+  .pass { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); }
+  .r-bottom { display: grid; grid-template-columns: 1fr 360px; gap: 18px; margin: 18px 22px 24px; }
+  .r-box { border: 3px solid #111; background: #fff; }
+  .r-box h3 { margin: 0; padding: 8px 14px; background: #111; color: #fff; font-size: 14px; letter-spacing: .18em; text-transform: uppercase; }
+  .start-line { display: flex; gap: 14px; flex-wrap: wrap; padding: 16px 14px; background: repeating-linear-gradient(90deg, #fff 0 18px, #f3efe4 18px 36px); }
+  .start-line .baton { position: static; transform: none; }
+  .rule { padding: 10px 14px; border-top: 2px solid #111; font-size: 16px; }
+  .rule:first-of-type { border-top: 0; }
+  .flag { background: repeating-linear-gradient(-45deg, #ffd21f 0 10px, #111 10px 20px); padding: 6px; }
+  .flag div { background: #ffd21f; padding: 8px 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+
+  /* ======================= 3 · THE LOGBOOK (paper notebook) ======================= */
+  #l { background: #ded7c8; background-image: radial-gradient(ellipse at 50% 0%, #ebe5d8, #d4ccbb 80%); padding: 24px 0 30px; font-family: 'Sitka Text', Georgia, serif; color: #2b2925; }
+  .book { position: relative; width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; filter: drop-shadow(0 18px 26px rgba(60,45,20,.28)); }
+  .pg { background-color: #fffdf6; background-image: repeating-linear-gradient(transparent 0 31px, #d6e2ee 31px 32px); background-position: 0 92px; min-height: 690px; padding: 26px 40px 30px 78px; position: relative; }
+  .pg::before { content: ''; position: absolute; left: 58px; top: 0; bottom: 0; width: 2px; background: #efb1b1; }
+  .pg.left { border-radius: 6px 0 0 6px; box-shadow: inset -18px 0 22px -16px rgba(80,60,30,.35); }
+  .pg.right { border-radius: 0 6px 6px 0; box-shadow: inset 18px 0 22px -16px rgba(80,60,30,.35); }
+  .tabs { position: absolute; right: -44px; top: 50px; display: flex; flex-direction: column; gap: 6px; }
+  .tabs div { width: 48px; padding: 12px 0; writing-mode: vertical-rl; text-align: center; font-family: 'Sitka Heading', Georgia, serif; font-size: 14px; border-radius: 0 8px 8px 0; box-shadow: 2px 1px 3px rgba(0,0,0,.15); cursor: pointer; }
+  .pg h1 { font-family: 'Sitka Heading', Georgia, serif; font-weight: 600; font-size: 30px; margin: 0; line-height: 46px; letter-spacing: -.01em; }
+  .pg .sub { font-style: italic; color: #7a7060; line-height: 32px; margin: 0 0 14px; }
+  .pg h2 { font-family: 'Sitka Heading', Georgia, serif; font-size: 19px; font-weight: 600; margin: 0; line-height: 32px; }
+  .entry { display: grid; grid-template-columns: 54px 1fr; line-height: 32px; position: relative; }
+  .entry .t { color: #9a8f7c; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .entry b { font-weight: 600; }
+  .margin-ink { position: absolute; left: -76px; width: 64px; text-align: right; font-family: 'Ink Free', 'Segoe Print', cursive; color: #2a4fbf; font-size: 15px; line-height: 1.1; top: 6px; }
+  .ink { font-family: 'Ink Free', 'Segoe Print', cursive; color: #2a4fbf; font-size: 19px; }
+  .redstamp { display: inline-block; border: 2px solid #c23b2b; color: #c23b2b; font-family: 'Sitka Heading', Georgia, serif; font-size: 12px; letter-spacing: .14em; padding: 0 7px; line-height: 20px; transform: rotate(-3deg); margin-right: 6px; vertical-align: 2px; }
+  .ink-link { border: 0; background: none; padding: 0; font-family: 'Ink Free', 'Segoe Print', cursive; color: #2a4fbf; font-size: 19px; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; margin-left: 10px; }
+  .write { display: flex; align-items: center; line-height: 32px; margin-top: 0; }
+  .write input { flex: 1; border: 0; background: transparent; font-family: 'Ink Free', 'Segoe Print', cursive; color: #2a4fbf; font-size: 19px; outline: none; height: 31px; }
+  .chk { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; line-height: 32px; cursor: pointer; }
+  .chk .box { width: 17px; height: 17px; border: 1.8px solid #2b2925; border-radius: 2px; position: relative; top: 1px; }
+  .chk.on .box::after { content: '✓'; position: absolute; left: 1px; top: -15px; font-family: 'Ink Free', 'Segoe Print', cursive; font-size: 26px; color: #1f7a3a; }
+  .chk.on .txt { text-decoration: line-through; text-decoration-color: #2b2925; color: #8a8170; }
+  .chk .ini { font-family: 'Ink Free', 'Segoe Print', cursive; color: #2a4fbf; font-size: 16px; border: 1.5px solid #2a4fbf; border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; line-height: 1; }
+  .hl { background: linear-gradient(transparent 35%, #fff07a 35% 88%, transparent 88%); padding: 0 2px; }
+  .redbox { border: 2px solid #c23b2b; color: #8e2a1f; padding: 0 12px; line-height: 30px; margin: 1px 0 1px; transform: rotate(-.4deg); }
+  .who-line { line-height: 32px; }
+  .who-line .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+</style>
+</head>
+<body>
+<nav class="switcher" aria-label="Styles">
+  <b>Baton · three styles</b>
+  <button data-opt="w" aria-pressed="true">1 · The wall</button>
+  <button data-opt="r" aria-pressed="false">2 · The relay</button>
+  <button data-opt="l" aria-pressed="false">3 · The logbook</button>
+  <span>Same project, three different looks. Click and drag things.</span>
+</nav>
+
+<!-- ================================ 1 · THE WALL ================================ -->
+<section class="option on" id="w">
+  <svg id="w-string"></svg>
+  <div class="w-head">
+    <div class="w-title hand">Roll a Fish</div>
+    <div class="polaroids">
+      <div class="pol"><i style="background:#4d7c0f">C</i>ceo</div>
+      <div class="pol"><i style="background:#2b59c3">B</i>Boe</div>
+      <div class="pol"><i style="background:#b5541e">L</i>Lucas</div>
+    </div>
+  </div>
+  <div class="w-grid">
+    <div>
+      <div class="zone-label hand">working right now</div>
+      <div class="note card pin green" style="--r:-1.2deg" id="w-boe">
+        <h4>Boe's Claude</h4>
+        <p>is adding a <b>"sell one fish"</b> button that never sells favourites</p>
+        <div class="small">● working now · next: test it with the starter fish</div>
+      </div>
+      <div class="note pink tape" style="--r:1.5deg" id="w-mine">
+        <div class="stamp">PAUSED · OUT OF USAGE</div>
+        <h4>Your Claude</h4>
+        <p>was making <b>Sell all</b> skip favourite fish. Got to step 2 of 3, nothing is lost.</p>
+        <button class="ink-btn" id="w-pass">pass it to Boe's Claude →</button>
+      </div>
+      <div class="note yellow pin blue" style="--r:-2deg; width: 70%">
+        <h4>ceo</h4>
+        <p>at training until 18:00</p>
+      </div>
+    </div>
+    <div>
+      <div class="zone-label hand">a question for you</div>
+      <div class="note yellow tape" style="--r:1deg">
+        <h4>Boe's Claude asks:</h4>
+        <p>Are you still on Sell all? If not, I can finish it while you're out.</p>
+        <div class="tick" data-tick>  <b></b> yes, take it over</div>
+        <div class="tick" data-tick>  <b></b> no, I'm on it</div>
+      </div>
+      <div class="zone-label hand" style="margin-top:6px">up next</div>
+      <div class="note card pin" style="--r:-1.5deg">
+        <span class="washi" style="background:#e08a1e">selling</span>
+        <h4>Show a receipt after selling</h4>
+        <div class="small">for: your Claude · 💬 1</div>
+      </div>
+      <div class="note mint pin blue" style="--r:2deg">
+        <span class="washi" style="background:#2f80c9">arctic</span>
+        <h4>Arctic plots for the new world</h4>
+        <div class="small">for: ceo · 💬 2</div>
+      </div>
+    </div>
+    <div>
+      <div class="zone-label hand">don't forget</div>
+      <div class="note caution" style="--r:-1deg">
+        <div class="stripe"></div>
+        <div class="body"><h4>Don't edit the fish selling script</h4><p>Boe's Claude is working in it right now.</p></div>
+      </div>
+      <div class="note blue-note pin" style="--r:1.8deg"><h4>Back up a script before changing it</h4></div>
+      <div class="note yellow tape" style="--r:-1deg"><h4>Odds are locked</h4><p>Legendary 0.5%. Ask ceo before changing them.</p></div>
+      <div class="zone-label hand" style="margin-top:4px">done ✓</div>
+      <div class="note card done-note pin green" style="--r:1deg; width: 80%"><h4>Chef animations</h4><div class="small">Boe · yesterday</div></div>
+    </div>
+  </div>
+  <div class="pad" title="New note"><div></div><div></div><div class="hand">+ new note</div></div>
+</section>
+
+<!-- ================================ 2 · THE RELAY ================================ -->
+<section class="option" id="r">
+  <div class="r-board">
+    <div class="name">Roll a Fish</div>
+    <div class="stat"><b class="green-t">1</b><span>running</span></div>
+    <div class="stat"><b class="orange-t">1</b><span>paused</span></div>
+    <div class="stat"><b>2</b><span>at the start</span></div>
+    <div class="stat"><b>1</b><span>finished today</span></div>
+  </div>
+  <div class="r-ask" id="r-ask">
+    <span>⚑</span><span class="grow">Boe's Claude asks you: still on "Sell all"? I can finish it.</span>
+    <button class="r-btn" data-r-answer="Yes">Yes, take it</button><button class="r-btn light" data-r-answer="No">I'm on it</button>
+  </div>
+  <div class="track" id="r-track">
+    <div class="marks"><div>Lane</div><div>Start</div><div>Halfway</div><div>Finish</div></div>
+    <div class="lane" id="lane1">
+      <div class="lane-id"><span class="num">1</span><div><div class="who">Boe's Claude</div><div class="st green-t">● Running</div></div></div>
+      <div class="lane-run">
+        <div class="baton" style="--at:58%"><span class="cap"></span><div><b>Sell one fish button</b><small>next: test it</small></div></div>
+      </div>
+    </div>
+    <div class="lane" id="lane2">
+      <div class="lane-id"><span class="num">2</span><div><div class="who">Your Claude</div><div class="st orange-t">❚❚ Paused</div></div></div>
+      <div class="lane-run">
+        <div class="baton paused" id="r-baton" style="--at:46%"><span class="cap"></span><div><b>Sell all skips favourites</b><small>step 2 of 3 · out of usage</small></div></div>
+        <button class="r-btn pass" id="r-pass">Pass the baton ↑</button>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lane-id"><span class="num">3</span><div><div class="who">ceo</div><div class="st" style="color:#aaa">Away</div></div></div>
+      <div class="lane-run"><div class="msg">At training until 18:00</div></div>
+    </div>
+    <div class="lane">
+      <div class="lane-id"><span class="num">4</span><div><div class="who">Lucas</div><div class="st" style="color:#aaa">Off today</div></div></div>
+      <div class="lane-run"></div>
+    </div>
+  </div>
+  <div class="r-bottom">
+    <div class="r-box">
+      <h3>At the start line · drag one into a lane to hand it out</h3>
+      <div class="start-line">
+        <div class="baton"><span class="cap"></span><div><b>Show a receipt</b><small>selling</small></div></div>
+        <div class="baton"><span class="cap"></span><div><b>Arctic plots</b><small>new world</small></div></div>
+        <div class="baton" style="border-style:dashed;box-shadow:none"><div><b>+ New</b></div></div>
+      </div>
+    </div>
+    <div class="r-box">
+      <h3>Track rules</h3>
+      <div class="flag"><div>Don't edit the fish selling script (lane 1 is in it)</div></div>
+      <div class="rule">Back up a script before changing it</div>
+      <div class="rule">Odds are locked: Legendary 0.5%</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================ 3 · THE LOGBOOK ================================ -->
+<section class="option" id="l">
+  <div class="book">
+    <div class="pg left">
+      <h1>Roll a Fish</h1>
+      <p class="sub">Monday, 23 November</p>
+      <div class="entry"><span class="t">17:02</span><span><b>Your Claude</b> started: Sell all should skip favourite fish (3 steps).</span></div>
+      <div class="entry"><span class="t">17:31</span><span><b>Your Claude</b>: step 1 done, favourites are skipped now.</span></div>
+      <div class="entry"><span class="margin-ink">pass it on?</span><span class="t">17:38</span><span><span class="redstamp">PAUSED</span>out of usage at step 2 of 3.<button class="ink-link" id="l-pass">give it to Boe's Claude</button></span></div>
+      <div class="entry"><span class="t">17:40</span><span><b>You</b>: off to training, back at 18:00.</span></div>
+      <div class="entry"><span class="margin-ink">for you</span><span class="t">17:52</span><span><b>Boe's Claude</b> asks: still on Sell all? I can finish it.</span></div>
+      <div class="entry" id="l-answer"><span class="t"></span><span><button class="ink-link" style="margin-left:0" data-l-answer="yes, take it over">yes, take it over</button><button class="ink-link" data-l-answer="no, I'm on it">no, I'm on it</button></span></div>
+      <div class="entry"><span class="t">17:55</span><span><b>Boe's Claude</b>: adding a "sell one fish" button.</span></div>
+      <div class="entry"><span class="t">18:04</span><span><b>Boe</b> commented: Arctic plots look great, keep the ice texture.</span></div>
+      <div class="write"><span style="width:54px"></span><input id="l-input" placeholder="write something for the team or a Claude…" /></div>
+    </div>
+    <div class="pg right">
+      <h2>Right now</h2>
+      <div class="who-line"><span class="dot" style="background:#23934a"></span><b>Boe's Claude</b> is adding the sell-one button</div>
+      <div class="who-line"><span class="dot" style="background:#c23b2b"></span><b>Your Claude</b> is paused (out of usage)</div>
+      <div class="who-line"><span class="dot" style="background:#c9b98f"></span><b>You</b> are at training · <b>Lucas</b> is off</div>
+      <div class="redbox">Do not edit: the fish selling script (Boe's Claude is in it)</div>
+      <h2 style="margin-top:32px">To-do</h2>
+      <div class="chk" data-chk><span class="box"></span><span class="txt">Sell all skips favourite fish</span><span class="ini">C</span></div>
+      <div class="chk" data-chk><span class="box"></span><span class="txt">Show a receipt after selling</span><span class="ini">C</span></div>
+      <div class="chk" data-chk><span class="box"></span><span class="txt">Sell one fish button</span><span class="ini">B</span></div>
+      <div class="chk" data-chk><span class="box"></span><span class="txt">Arctic plots for the new world</span><span class="ini">C</span></div>
+      <div class="chk on" data-chk><span class="box"></span><span class="txt">Chef animations</span><span class="ini">B</span></div>
+      <h2 style="margin-top:32px">Remember</h2>
+      <div class="who-line">· <span class="hl">Back up a script before changing it</span></div>
+      <div class="who-line">· <span class="hl">Odds are locked: Legendary 0.5%</span> <span class="ink">ask ceo</span></div>
+    </div>
+    <div class="tabs">
+      <div style="background:#f2d16b">Today</div>
+      <div style="background:#9fd0b0">To-do</div>
+      <div style="background:#9cc0ec">Notes</div>
+      <div style="background:#e8a7a0">People</div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const pick = (id) => {
+    document.querySelectorAll('.switcher [data-opt]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.opt === id)));
+    document.querySelectorAll('.option').forEach((o) => o.classList.toggle('on', o.id === id));
+    if (id === 'w') requestAnimationFrame(drawString);
+  };
+  document.querySelectorAll('.switcher [data-opt]').forEach((b) => b.addEventListener('click', () => pick(b.dataset.opt)));
+
+  // ---- 1 · wall: a red string ties the paused note to the Claude that could take it; notes can be dragged
+  function drawString() {
+    const svg = document.getElementById('w-string');
+    const wall = document.getElementById('w').getBoundingClientRect();
+    const a = document.getElementById('w-mine').getBoundingClientRect();
+    const b = document.getElementById('w-boe').getBoundingClientRect();
+    const x1 = a.right - wall.left - 30, y1 = a.top - wall.top + 30;
+    const x2 = b.right - wall.left - 24, y2 = b.bottom - wall.top - 20;
+    svg.setAttribute('width', wall.width); svg.setAttribute('height', wall.height);
+    svg.innerHTML = `<path d="M${x1} ${y1} C ${x1 + 34} ${y1 - 8}, ${x2 + 34} ${y2 + 8}, ${x2} ${y2}" stroke="#b3261e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <circle cx="${x1}" cy="${y1}" r="5" fill="#b3261e"/><circle cx="${x2}" cy="${y2}" r="5" fill="#b3261e"/>`;
+  }
+  addEventListener('resize', drawString);
+  document.querySelectorAll('#w .note').forEach((n) => {
+    let sx, sy, ox = 0, oy = 0, moving = false;
+    n.addEventListener('pointerdown', (e) => { if (e.target.closest('button,[data-tick]')) return; moving = true; sx = e.clientX - ox; sy = e.clientY - oy; n.setPointerCapture(e.pointerId); n.classList.add('dragging'); });
+    n.addEventListener('pointermove', (e) => { if (!moving) return; ox = e.clientX - sx; oy = e.clientY - sy; n.style.translate = `${ox}px ${oy}px`; drawString(); });
+    n.addEventListener('pointerup', () => { moving = false; n.classList.remove('dragging'); });
+  });
+  document.querySelectorAll('[data-tick]').forEach((t) => t.addEventListener('click', () => {
+    document.querySelectorAll('[data-tick]').forEach((x) => x.classList.toggle('on', x === t));
+  }));
+  document.getElementById('w-pass').addEventListener('click', (e) => {
+    e.target.outerHTML = '<div class="hand" style="font-size:20px;color:#1f7a3a;margin-top:10px">✓ handed to Boe\'s Claude</div>';
+  });
+
+  // ---- 2 · relay: passing the baton flies it up into lane 1 on an arc
+  document.getElementById('r-pass').addEventListener('click', (e) => {
+    const baton = document.getElementById('r-baton');
+    const lane1 = document.querySelector('#lane1 .lane-run');
+    const from = baton.getBoundingClientRect(), to = lane1.getBoundingClientRect();
+    baton.classList.add('flying');
+    baton.style.zIndex = 3;
+    baton.style.top = `calc(50% - ${from.top - to.top}px)`;
+    baton.style.left = '22%';
+    e.target.textContent = 'Passed ✓';
+    e.target.disabled = true;
+    setTimeout(() => { baton.classList.remove('paused'); baton.querySelector('small').textContent = "boe's claude · step 2 of 3"; }, 650);
+  });
+  document.querySelectorAll('[data-r-answer]').forEach((b) => b.addEventListener('click', () => {
+    document.getElementById('r-ask').innerHTML = `<span>✓</span><span class="grow">Answer sent: ${b.dataset.rAnswer === 'Yes' ? "Boe's Claude takes Sell all" : "Boe's Claude leaves it to you"}</span>`;
+  }));
+
+  // ---- 3 · logbook
+  document.querySelectorAll('[data-chk]').forEach((c) => c.addEventListener('click', () => c.classList.toggle('on')));
+  document.querySelectorAll('[data-l-answer]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelector('#l-answer span:last-child').innerHTML = `<span class="ink">✓ you answered: ${b.dataset.lAnswer}</span>`;
+  }));
+  document.getElementById('l-pass').addEventListener('click', (e) => { e.target.outerHTML = '<span class="ink" style="margin-left:10px">✓ given to Boe\'s Claude</span>'; });
+  document.getElementById('l-input').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target.value.trim()) return;
+    const row = document.createElement('div');
+    row.className = 'entry';
+    row.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 5)}</span><span><b>You</b>: <span></span></span>`;
+    row.querySelector('span span').textContent = e.target.value.trim();
+    e.target.closest('.write').before(row);
+    e.target.value = '';
+  });
+
+  // deep links for screenshots: #w, #r, #l
+  const h = location.hash.slice(1);
+  if (h) { document.documentElement.classList.add('shot'); pick(h); } else requestAnimationFrame(drawString);
+</script>
+</body>
+</html>

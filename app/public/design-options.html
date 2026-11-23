@@ -179,6 +179,7 @@
   .c-right h2 { font-size: 15px; margin: 0 0 10px; }
   .c-pin { background: #fff; border: 1px solid #ece6da; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
   .c-pin .t { font-weight: 600; }
+  .shot *, .shot *::before, .shot *::after { animation: none !important; transition: none !important; }
 </style>
 </head>
 <body>
@@ -569,6 +570,8 @@
     b.parentElement.innerHTML = `<span class="muted small">You answered: ${b.dataset.cAnswer}</span>`;
     say(b.dataset.cAnswer);
   }));
+  // deep links for screenshots: #a, #b, #b-card, #c
+  (() => { const h = location.hash.slice(1); if (!h) return; document.documentElement.classList.add("shot"); document.querySelector(`[data-opt="${h[0]}"]`)?.click(); if (h === "b-card") document.querySelector(".bb-card[data-open-card]")?.click(); })();
 </script>
 </body>
 </html>
