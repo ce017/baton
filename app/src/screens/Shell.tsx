@@ -1,22 +1,22 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, ChevronsUpDown, FileText, Inbox, KanbanSquare, LogOut, Plus, Search, Users } from 'lucide-react';
+import { ChevronDown, FileText, KanbanSquare, LogOut, MessageSquare, Moon, Plus, Search, Sun, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import { createContext, type FormEvent, useContext, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { type Config, call, type Me, type Overview, type Task, type TreeItem } from '../lib/api.ts';
 import { useLive } from '../lib/live.ts';
 import { Avatar, EASE_MOVE, Skel, useToast } from '../ui.tsx';
-import { InboxScreen } from './InboxScreen.tsx';
-import { LiveScreen } from './LiveScreen.tsx';
+import { BoardScreen } from './BoardScreen.tsx';
+import { MessagesScreen } from './MessagesScreen.tsx';
 import { PagesScreen } from './PagesScreen.tsx';
 import { PeopleScreen } from './PeopleScreen.tsx';
-import { TasksScreen } from './TasksScreen.tsx';
 
-export type View = 'live' | 'pages' | 'tasks' | 'inbox' | 'people';
+export type View = 'board' | 'notes' | 'messages' | 'team';
 export interface Route {
   view: View;
   page?: string;
   task?: string;
+  chat?: string;
 }
 
 interface ProjectState {
@@ -34,33 +34,43 @@ export function useProject(): ProjectState {
   return v;
 }
 
-/** Query helper: every project query lives under ['p', slug, …] so live updates refresh them all. */
+/** Every project query lives under ['p', slug, …] so live updates refresh them all. */
 export function useProjectQuery<T>(key: string[], path: string, enabled = true) {
   const { cfg, slug } = useProject();
   return useQuery({ queryKey: ['p', slug, ...key], queryFn: () => call<T>(cfg, 'GET', path), enabled });
 }
 
-const NAV: { view: View; label: string; icon: typeof Activity }[] = [
-  { view: 'live', label: 'Live', icon: Activity },
-  { view: 'pages', label: 'Pages', icon: FileText },
-  { view: 'tasks', label: 'Tasks', icon: KanbanSquare },
-  { view: 'inbox', label: 'Inbox', icon: Inbox },
-  { view: 'people', label: 'People & Claude', icon: Users },
+const TABS: { view: View; label: string; icon: typeof KanbanSquare }[] = [
+  { view: 'board', label: 'Board', icon: KanbanSquare },
+  { view: 'notes', label: 'Notes', icon: FileText },
+  { view: 'messages', label: 'Messages', icon: MessageSquare },
+  { view: 'team', label: 'Team', icon: Users },
 ];
+
+function useTheme(): ['dark' | 'light', () => void] {
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('baton.theme') === 'light' ? 'light' : 'dark'));
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('baton.theme', theme);
+  }, [theme]);
+  return [theme, () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))];
+}
 
 export function Shell() {
   const { cfg, update, signOut } = useApp();
   const me = useQuery({ queryKey: ['me'], queryFn: () => call<Me>(cfg, 'GET', '/api/me') });
   const projects = me.data?.projects ?? [];
   const slug = cfg.project && projects.some((p) => p.slug === cfg.project) ? cfg.project : projects[0]?.slug;
-  const [route, go] = useState<Route>({ view: 'live' });
+  const [route, go] = useState<Route>({ view: 'board' });
   const [palette, setPalette] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [theme, toggleTheme] = useTheme();
   const live = useLive(cfg, slug);
   const overview = useQuery({
     queryKey: ['p', slug, 'overview'],
     queryFn: () => call<Overview>(cfg, 'GET', `/api/projects/${slug}/overview`),
     enabled: !!slug,
-    refetchInterval: 60_000, // presence dots age even when nothing changes
+    refetchInterval: 60_000, // presence ages even when nothing changes
   });
 
   useEffect(() => {
@@ -69,6 +79,7 @@ export function Shell() {
         e.preventDefault();
         setPalette((v) => !v);
       }
+      if (e.key === 'Escape') setMenu(false);
     };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
@@ -92,88 +103,76 @@ export function Shell() {
   const o = overview.data;
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
+    <div className="app">
+      <header className="topbar2">
+        <div className="brand" style={{ padding: 0 }}>
           <span className="brand-mark">bt</span>
           Baton
-          <span
-            className={`dot ${live === 'live' ? 'live' : live === 'connecting' ? 'idle' : 'away'}`}
-            title={live === 'live' ? 'Live updates on' : live === 'connecting' ? 'Connecting…' : 'Offline, retrying'}
-            style={{ marginLeft: 'auto' }}
-          />
         </div>
         {me.isLoading ? (
-          <div style={{ padding: '4px 14px' }}>
-            <Skel h={30} r={6} />
-          </div>
+          <Skel w={140} h={28} r={7} />
         ) : (
           projects.length > 0 && (
-            <label className="project-switch" style={{ position: 'relative', display: 'block' }}>
-              <select
-                className="input"
-                style={{ appearance: 'none', fontWeight: 600, paddingRight: 28 }}
-                value={slug}
-                onChange={(e) => {
-                  update({ project: e.target.value });
-                  go({ view: 'live' });
-                }}
-              >
-                {projects.map((p) => (
-                  <option key={p.slug} value={p.slug}>{p.name}</option>
-                ))}
+            <label className="proj">
+              <select value={slug} onChange={(e) => { update({ project: e.target.value }); go({ view: 'board' }); }} aria-label="Project">
+                {projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
               </select>
-              <ChevronsUpDown size={14} style={{ position: 'absolute', right: 9, top: 9, color: 'var(--ink-3)', pointerEvents: 'none' }} />
+              <ChevronDown size={14} />
             </label>
           )
         )}
         {slug && (
-          <nav className="nav">
-            {NAV.map(({ view, label, icon: Icon }) => {
-              const active = route.view === view;
-              const extra =
-                view === 'inbox' && o?.unread ? <span className="badge">{o.unread}</span>
-                : view === 'pages' && o ? <span className="count">{o.counts.pages}</span>
-                : view === 'tasks' && o ? <span className="count">{o.counts.openTasks}</span>
-                : null;
-              return (
-                <button type="button" key={view} className="nav-item" aria-current={active ? 'page' : undefined} onClick={() => go({ view })}>
-                  {active && <motion.span layoutId="nav-active" className="nav-bg" transition={{ duration: 0.22, ease: EASE_MOVE }} />}
-                  <Icon size={15} />
-                  <span>{label}</span>
-                  {extra}
-                </button>
-              );
-            })}
-            <button type="button" className="nav-item" onClick={() => setPalette(true)}>
-              <Search size={15} />
-              <span>Search</span>
-              <span className="kbd" style={{ marginLeft: 'auto' }}>Ctrl K</span>
-            </button>
+          <nav className="tabs2">
+            {TABS.map(({ view, label, icon: Icon }) => (
+              <button type="button" key={view} className={`tab2 ${route.view === view ? 'on' : ''}`} onClick={() => go({ view })} aria-current={route.view === view ? 'page' : undefined}>
+                <Icon size={15} />
+                {label}
+                {view === 'messages' && o?.unread ? <span className="cnt">{o.unread}</span> : null}
+                {route.view === view && <motion.span layoutId="tab-uline" className="uline" transition={{ duration: 0.22, ease: EASE_MOVE }} />}
+              </button>
+            ))}
           </nav>
         )}
-        <div className="sidebar-foot row">
-          <Avatar label={cfg.user ?? '?'} />
-          <div className="grow">
-            <div className="truncate" style={{ fontWeight: 500 }}>{cfg.user}</div>
-            <div className="faint truncate" style={{ fontSize: 11 }}>{o ? `${o.role} · ${o.project.name}` : cfg.server}</div>
-          </div>
-          <button type="button" className="btn ghost icon" title="Sign out" onClick={signOut}>
-            <LogOut size={15} />
+        <div className="top-right">
+          {slug && (
+            <button type="button" className="searchbtn" onClick={() => setPalette(true)}>
+              <Search size={14} /> Search <span className="kbd">Ctrl K</span>
+            </button>
+          )}
+          <span
+            className={`dot ${live === 'live' ? 'live' : live === 'connecting' ? 'idle' : 'away'}`}
+            title={live === 'live' ? 'Live updates on' : live === 'connecting' ? 'Connecting…' : 'Offline, retrying'}
+          />
+          <button type="button" className="mebtn" onClick={() => setMenu((v) => !v)} aria-label="Your menu">
+            <Avatar label={cfg.user ?? '?'} />
           </button>
         </div>
-      </aside>
+        {menu && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 29 }} onClick={() => setMenu(false)} />
+            <div className="menu" style={{ right: 12, top: 48 }}>
+              <div style={{ padding: '6px 10px 8px' }}>
+                <div style={{ fontWeight: 600 }}>{cfg.user}</div>
+                <div className="faint" style={{ fontSize: 12 }}>{o ? `${o.role} · ${o.project.name}` : cfg.server}</div>
+              </div>
+              <button type="button" className="menu-item" onClick={() => { toggleTheme(); setMenu(false); }}>
+                {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />} {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+              </button>
+              <button type="button" className="menu-item" onClick={signOut}><LogOut size={14} /> Sign out</button>
+            </div>
+          </>
+        )}
+      </header>
 
-      <main className="main">
+      <main className="view">
         {!slug && !me.isLoading ? (
           <CreateProject first />
         ) : state ? (
           <ProjectCtx.Provider value={state}>
-            {route.view === 'live' && <LiveScreen />}
-            {route.view === 'pages' && <PagesScreen />}
-            {route.view === 'tasks' && <TasksScreen />}
-            {route.view === 'inbox' && <InboxScreen />}
-            {route.view === 'people' && <PeopleScreen onCreateProject={() => go({ view: 'people' })} />}
+            {route.view === 'board' && <BoardScreen />}
+            {route.view === 'notes' && <div className="pagewrap" style={{ display: 'flex', flexDirection: 'column' }}><PagesScreen /></div>}
+            {route.view === 'messages' && <MessagesScreen />}
+            {route.view === 'team' && <div className="pagewrap"><PeopleScreen onCreateProject={() => {}} /></div>}
             {palette && <Palette onClose={() => setPalette(false)} />}
           </ProjectCtx.Provider>
         ) : null}
@@ -205,26 +204,24 @@ export function CreateProject({ first, onDone }: { first?: boolean; onDone?: () 
     <form className={first ? 'signin' : ''} onSubmit={submit}>
       <div className="card signin-card">
         <h2 style={{ margin: '0 0 4px', fontSize: 16 }}>{first ? 'Create your first project' : 'New project'}</h2>
-        <p className="muted" style={{ marginTop: 0 }}>A project holds the pages, tasks and handoffs your team and their Claudes share.</p>
+        <p className="muted" style={{ marginTop: 0 }}>A project holds the to-dos, notes and messages your team and their Claudes share.</p>
         <div className="field">
           <label className="label" htmlFor="pname">Name</label>
           <input id="pname" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Roll a Fish" autoFocus />
         </div>
         <div className="field">
-          <label className="label" htmlFor="pslug">Short id</label>
+          <label className="label" htmlFor="pslug">Short name</label>
           <input id="pslug" className="input mono" value={slug || auto} onChange={(e) => setSlug(e.target.value)} placeholder="roll-a-fish" />
-          <div className="hint">Claudes use this to name the project.</div>
+          <div className="hint">Claudes use this to refer to the project.</div>
         </div>
         {error && <p className="error-text">{error}</p>}
-        <button className="btn primary" disabled={!name.trim()}>
-          <Plus size={15} /> Create project
-        </button>
+        <button className="btn primary" disabled={!name.trim()}><Plus size={15} /> Create project</button>
       </div>
     </form>
   );
 }
 
-/** Ctrl+K: jump to any page, task or screen. Used many times a day, so it appears instantly (no animation). */
+/** Ctrl+K: jump to any note, to-do or screen. Used many times a day, so it appears instantly. */
 function Palette({ onClose }: { onClose: () => void }) {
   const { go, slug } = useProject();
   const tree = useProjectQuery<TreeItem[]>(['tree'], `/api/projects/${slug}/tree`);
@@ -235,24 +232,20 @@ function Palette({ onClose }: { onClose: () => void }) {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const hit = (s: string) => words.every((w) => s.toLowerCase().includes(w));
     const out: { key: string; label: string; sub: string; run: () => void }[] = [];
-    for (const n of NAV) if (!words.length || hit(n.label)) out.push({ key: `v-${n.view}`, label: n.label, sub: 'Screen', run: () => go({ view: n.view }) });
-    for (const t of tree.data ?? []) {
-      if (words.length && hit(`${t.path} ${t.title} ${t.summary}`)) out.push({ key: t.path, label: t.title, sub: t.path, run: () => go({ view: 'pages', page: t.path }) });
-    }
-    for (const t of tasks.data ?? []) {
-      if (words.length && hit(`${t.id} ${t.title} ${t.area}`)) out.push({ key: t.id, label: `${t.id} ${t.title}`, sub: 'Task', run: () => go({ view: 'tasks', task: t.id }) });
-    }
+    for (const n of TABS) if (!words.length || hit(n.label)) out.push({ key: `v-${n.view}`, label: n.label, sub: 'Screen', run: () => go({ view: n.view }) });
+    for (const t of tree.data ?? []) if (words.length && hit(`${t.path} ${t.title} ${t.summary}`)) out.push({ key: t.path, label: t.title, sub: 'Note', run: () => go({ view: 'notes', page: t.path }) });
+    for (const t of tasks.data ?? []) if (words.length && hit(`${t.title} ${t.area}`)) out.push({ key: t.id, label: t.title, sub: 'To-do', run: () => go({ view: 'board', task: t.id }) });
     return out.slice(0, 12);
   }, [q, tree.data, tasks.data, go]);
 
   useEffect(() => setSel(0), [q]);
   return (
     <>
-      <div className="scrim" onClick={onClose} style={{ background: 'rgba(29,28,26,0.12)' }} />
+      <div className="scrim" onClick={onClose} />
       <div className="palette" role="dialog" aria-label="Search">
         <input
           autoFocus
-          placeholder="Search pages, tasks and screens…"
+          placeholder="Search notes, to-dos and screens…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -266,7 +259,7 @@ function Palette({ onClose }: { onClose: () => void }) {
           {results.map((r, i) => (
             <div key={r.key} className={`palette-row ${i === sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => { r.run(); onClose(); }}>
               <span className="grow truncate">{r.label}</span>
-              <span className="faint mono truncate" style={{ maxWidth: 220 }}>{r.sub}</span>
+              <span className="faint truncate" style={{ maxWidth: 220 }}>{r.sub}</span>
             </div>
           ))}
           {!results.length && <div className="empty">Nothing matches.</div>}

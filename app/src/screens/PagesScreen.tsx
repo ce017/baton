@@ -48,7 +48,7 @@ export function PagesScreen() {
   useEffect(() => {
     if (!route.page && tree.data?.length) {
       const pinned = tree.data.find((t) => t.pinned) ?? tree.data.find((t) => t.kind !== 'skill');
-      if (pinned) go({ view: 'pages', page: pinned.path });
+      if (pinned) go({ view: 'notes', page: pinned.path });
     }
   }, [route.page, tree.data, go]);
 
@@ -63,12 +63,12 @@ export function PagesScreen() {
   return (
     <>
       <header className="topbar">
-        <h1>Pages</h1>
-        <span className="faint">The shared vault: what every Claude reads before it starts</span>
+        <h1>Notes</h1>
+        <span className="faint">What every Claude reads before it starts</span>
         <div className="grow" />
         {editable && (
           <button type="button" className="btn" onClick={() => setNewPath(route.page?.split('/').slice(0, -1).join('/').concat('/') ?? '')}>
-            <FilePlus2 size={15} /> New page
+            <FilePlus2 size={15} /> New note
           </button>
         )}
       </header>
@@ -96,14 +96,14 @@ export function PagesScreen() {
                 ))}
               </div>
             ) : tree.data?.length ? (
-              <FolderView folder={root} depth={0} selected={selected} onOpen={(p) => { setDraftPath(null); go({ view: 'pages', page: p }); }} />
+              <FolderView folder={root} depth={0} selected={selected} onOpen={(p) => { setDraftPath(null); go({ view: 'notes', page: p }); }} />
             ) : (
               <Empty title="No pages yet">{editable ? 'Create one, or import notes with the CLI.' : 'An admin can add some.'}</Empty>
             )}
           </nav>
           <div className="scroll">
             {draftPath ? (
-              <PageEditor key={`new-${draftPath}`} path={draftPath} onDone={(p) => { setDraftPath(null); if (p) go({ view: 'pages', page: p }); }} />
+              <PageEditor key={`new-${draftPath}`} path={draftPath} onDone={(p) => { setDraftPath(null); if (p) go({ view: 'notes', page: p }); }} />
             ) : route.page ? (
               <PageView key={route.page} path={route.page} items={tree.data ?? []} />
             ) : (
@@ -283,7 +283,7 @@ function PageView({ path, items }: { path: string; items: TreeItem[] }) {
                 const target = decodeURIComponent(href.slice(5));
                 const hit = resolveWiki(target, items);
                 return (
-                  <a className={`wikilink ${hit ? '' : 'missing'}`} onClick={() => hit && go({ view: 'pages', page: hit.path })} title={hit ? hit.path : 'No page with that name yet'}>
+                  <a className={`wikilink ${hit ? '' : 'missing'}`} onClick={() => hit && go({ view: 'notes', page: hit.path })} title={hit ? hit.path : 'No page with that name yet'}>
                     {children}
                   </a>
                 );
