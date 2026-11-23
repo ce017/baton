@@ -239,6 +239,156 @@
   .m-pop .pi { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
   .m-pop .pi.sel, .m-pop .pi:hover { background: #eef4ff; }
   .m-pop .pi .s { margin-left: auto; color: #8a91a0; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+
+  /* ================================ DARK THEME (Board frame + chat) ================================ */
+  .dark #a, .dark #m { background: #0f1115; color: #e7e9ee; }
+  .dark .a-top { background: #13161b; border-bottom-color: #232831; }
+  .dark .logo i { background: #e7e9ee; color: #13161b; }
+  .dark .a-proj { background: #1a1e25; border-color: #2a2f38; }
+  .dark .a-tabs button { color: #a3aab6; }
+  .dark .a-tabs button.on { color: #fff; border-bottom-color: #4d8dff; }
+  .dark .count { background: #3b7cf0; }
+  .dark .a-search { background: #171a20; border-color: #2a2f38; color: #7d8491; }
+  .dark .a-now { background: #13161b; border-color: #232831; }
+  .dark .a-now .lbl { color: #7d8491; }
+  .dark .now { background: #1b1f26; }
+  .dark .now span { color: #a3aab6; }
+  .dark .now.paused { background: rgba(224,155,35,.12); }
+  .dark .link { color: #7aa9ff; }
+  .dark .a-notice { background: rgba(77,141,255,.12); color: #a9c6ff; }
+  .dark .col-h .n { color: #7d8491; }
+  .dark .col-h .add { color: #7d8491; }
+  .dark .col-h .add:hover { background: #1d2128; color: #fff; }
+  .dark .tcard { background: #171a20; border-color: #262b33; box-shadow: none; }
+  .dark .tcard:hover { border-color: #3a414d; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  .dark .tcard.sel { border-color: #4d8dff; box-shadow: 0 0 0 3px rgba(77,141,255,.22); }
+  .dark .meta { color: #8a91a0; }
+  .dark .lab.sell { background: rgba(224,155,35,.16); color: #f0b866; }
+  .dark .lab.arc { background: rgba(77,141,255,.16); color: #8db6ff; }
+  .dark .lab.fix { background: rgba(30,158,96,.18); color: #6fd19d; }
+  .dark .cl { border-top-color: #232831; }
+  .dark .cl.g { color: #5fd394; } .dark .cl.y { color: #f0b866; }
+  .dark .dot.g { background: #2fbf74; } .dark .dot.y { background: #e9a630; } .dark .dot.n { background: #4a515e; }
+  .dark .add-row { color: #7d8491; }
+  .dark .done .t { color: #6b7280; }
+  .dark .panel { background: #13161b; border-left-color: #232831; box-shadow: -12px 0 34px rgba(0,0,0,.45); }
+  .dark .crumb, .dark .crumb .x { color: #7d8491; }
+  .dark .fields .k { color: #8a91a0; }
+  .dark .sel-box { border-color: #2f3540; }
+  .dark .left-off { background: rgba(224,155,35,.08); border-color: rgba(224,155,35,.32); }
+  .dark .left-off .h { color: #f0b866; }
+  .dark .left-off p { color: #c3c8d1; }
+  .dark .btn { background: #1d2128; border-color: #2f3540; color: #e7e9ee; }
+  .dark .btn:hover { background: #242933; }
+  .dark .btn.blue { background: #3b7cf0; border-color: #3b7cf0; color: #fff; }
+  .dark .btn.blue:hover { background: #4d8dff; }
+  .dark .sec { color: #7d8491; }
+  .dark .bar { background: #232831; } .dark .bar i { background: #2fbf74; }
+  .dark .ck .b { border-color: #4a515e; }
+  .dark .ck.on .b { background: #2fbf74; border-color: #2fbf74; }
+  .dark .ck.on span { color: #6b7280; }
+  .dark .act .when { color: #7d8491; }
+  .dark .input { background: #171a20; border-color: #2a2f38; color: #e7e9ee; }
+  .dark .input::placeholder, .dark .m-box textarea::placeholder { color: #6b7280; }
+  .dark .stack .av { border-color: #0f1115; }
+  .dark .av .ai { background: #e7e9ee; color: #111318; border-color: #0f1115; }
+  .dark .stat { border-color: #4a515e; }
+  /* chat */
+  .dark .m-list { background: #13161b; border-right-color: #232831; }
+  .dark .m-search { background: #171a20; border-color: #2a2f38; color: #7d8491; }
+  .dark .m-h { color: #7d8491; }
+  .dark .m-conv:hover { background: #1a1e25; }
+  .dark .m-conv.on { background: rgba(77,141,255,.14); }
+  .dark .m-conv .pv, .dark .m-conv .side { color: #8a91a0; }
+  .dark .m-conv .ic { background: #1d2128; color: #a3aab6; }
+  .dark .m-conv.on .ic { background: rgba(77,141,255,.22); color: #8db6ff; }
+  .dark .m-conv .badge { background: #3b7cf0; }
+  .dark .m-head { border-bottom-color: #232831; }
+  .dark .m-head .sub { color: #8a91a0; }
+  .dark .m-day { color: #7d8491; }
+  .dark .m-day::before, .dark .m-day::after { background: #232831; }
+  .dark .m-msg .who .t { color: #6b7280; }
+  .dark .m-msg .tx { color: #d5d9e0; }
+  .dark .m-msg .mention { background: rgba(77,141,255,.16); color: #8db6ff; }
+  .dark .m-chip { background: #171a20; border-color: #2a2f38; }
+  .dark .m-chip .k { color: #8a91a0; }
+  .dark .m-seen { color: #6b7280; }
+  .dark .m-event span { background: rgba(224,155,35,.1); border-color: rgba(224,155,35,.3); color: #f0b866; }
+  .dark .m-event.ok span { background: rgba(47,191,116,.1); border-color: rgba(47,191,116,.3); color: #5fd394; }
+  .dark .m-ask { background: rgba(224,155,35,.07); border-color: rgba(224,155,35,.3); }
+  .dark .m-ask .note { color: #7d8491; }
+  .dark .m-lock { color: #8a91a0; }
+  .dark .m-box { background: #171a20; border-color: #2f3540; }
+  .dark .m-box:focus-within { border-color: #4d8dff; box-shadow: 0 0 0 3px rgba(77,141,255,.2); }
+  .dark .m-box textarea { background: transparent; color: #e7e9ee; }
+  .dark .m-tools .tb { color: #a3aab6; }
+  .dark .m-tools .tb:hover { background: #1d2128; }
+  .dark .m-pop { background: #1a1e25; border-color: #2a2f38; box-shadow: 0 14px 36px rgba(0,0,0,.55); }
+  .dark .m-pop .ph, .dark .m-pop .pi .s { color: #8a91a0; }
+  .dark .m-pop .pi.sel, .dark .m-pop .pi:hover { background: rgba(77,141,255,.14); }
+  .dark .m-pop .ic { background: #242933 !important; }
+  .dark .m-hint { color: #6b7280; }
+
+  /* ================================ CLAUDE JOBS (Team tab) ================================ */
+  #j { background: #f7f8fa; color: #1a1d23; }
+  .j-wrap { height: calc(100% - 56px); overflow: auto; padding: 20px 28px 32px; }
+  .j-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 16px; }
+  .j-head h2 { margin: 0; font-size: 20px; }
+  .j-head p { margin: 2px 0 0; color: #6b7280; }
+  .j-sub { display: flex; gap: 4px; margin-bottom: 14px; }
+  .j-sub button { border: 1px solid transparent; background: none; border-radius: 7px; padding: 5px 12px; color: #5b6270; font-weight: 500; }
+  .j-sub button.on { background: #fff; border-color: #e1e4e9; color: #1a1d23; font-weight: 600; box-shadow: 0 1px 2px rgba(16,24,40,.05); }
+  .j-grid { display: grid; grid-template-columns: 360px 1fr; gap: 20px; align-items: start; }
+  .j-job { display: flex; gap: 12px; background: #fff; border: 1px solid #e3e6eb; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer; transition: border-color 120ms, box-shadow 120ms; }
+  .j-job:hover { border-color: #c9ced6; }
+  .j-job.on { border-color: #1d6fe8; box-shadow: 0 0 0 3px rgba(29,111,232,.12); }
+  .j-ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
+  .j-job .nm { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .j-job .ds { color: #5b6270; font-size: 13px; }
+  .j-job .mt { color: #8a91a0; font-size: 12.5px; margin-top: 4px; }
+  .j-new { width: 100%; border: 1.5px dashed #cfd4db; background: none; border-radius: 10px; padding: 11px; color: #5b6270; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 18px; }
+  .j-box { background: #fff; border: 1px solid #e3e6eb; border-radius: 10px; }
+  .j-box .bh { padding: 12px 14px 6px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .j-box .bh span { color: #8a91a0; font-weight: 500; font-size: 13px; }
+  .j-chat { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid #f0f2f5; }
+  .j-chat .cn { font-weight: 500; }
+  .j-chat .cm { color: #8a91a0; font-size: 12.5px; }
+  .j-pick { margin-left: auto; display: flex; align-items: center; gap: 6px; border: 1px solid #d9dde3; background: #fff; border-radius: 7px; padding: 4px 8px 4px 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .j-detail { background: #fff; border: 1px solid #e3e6eb; border-radius: 12px; padding: 20px 22px; }
+  .j-title { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid #f0f2f5; margin-bottom: 16px; }
+  .j-title h3 { margin: 0; font-size: 18px; }
+  .j-title .as { color: #6b7280; font-size: 13px; }
+  .j-sec { display: grid; grid-template-columns: 190px 1fr; gap: 18px; padding: 12px 0; border-bottom: 1px solid #f3f4f6; }
+  .j-sec:last-child { border-bottom: 0; }
+  .j-sec .k { font-weight: 600; }
+  .j-sec .k small { display: block; font-weight: 400; color: #8a91a0; font-size: 12.5px; margin-top: 2px; }
+  .j-text { border: 1px solid #e1e4e9; border-radius: 8px; padding: 9px 11px; color: #2b303a; line-height: 1.5; background: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chipx { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e1e4e9; border-radius: 7px; padding: 3px 9px; font-size: 13px; background: #fff; }
+  .chipx .x { color: #9aa0aa; }
+  .chipx.addc { border-style: dashed; color: #5b6270; }
+  .chipx .src { color: #8a91a0; font-size: 12px; }
+  .togrow { display: flex; align-items: center; gap: 12px; padding: 5px 0; }
+  .togrow .lt { flex: 1; } .togrow .lt small { display: block; color: #8a91a0; font-size: 12.5px; }
+  .tog { width: 36px; height: 20px; border-radius: 10px; background: #d5d9e0; position: relative; flex: none; cursor: pointer; transition: background-color 150ms; }
+  .tog::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform 180ms cubic-bezier(.16,1,.3,1); }
+  .tog.on { background: #1d6fe8; } .tog.on::after { transform: translateX(16px); }
+  .j-howto { margin-top: 8px; background: #f5f7fa; border-radius: 8px; padding: 9px 12px; color: #4b5260; font-size: 13px; }
+  .j-howto code { background: #fff; border: 1px solid #e1e4e9; border-radius: 5px; padding: 0 5px; font-family: Consolas, monospace; font-size: 12.5px; }
+  .dark #j { background: #0f1115; color: #e7e9ee; }
+  .dark .j-head p, .dark .j-title .as { color: #8a91a0; }
+  .dark .j-sub button { color: #a3aab6; }
+  .dark .j-sub button.on { background: #1a1e25; border-color: #2a2f38; color: #fff; box-shadow: none; }
+  .dark .j-job, .dark .j-box, .dark .j-detail { background: #171a20; border-color: #262b33; }
+  .dark .j-job.on { border-color: #4d8dff; box-shadow: 0 0 0 3px rgba(77,141,255,.22); }
+  .dark .j-job .ds { color: #a3aab6; } .dark .j-job .mt, .dark .j-chat .cm, .dark .j-box .bh span { color: #7d8491; }
+  .dark .j-new { border-color: #363c47; color: #a3aab6; }
+  .dark .j-chat, .dark .j-title, .dark .j-sec { border-color: #232831; }
+  .dark .j-pick, .dark .chipx, .dark .j-text { background: #1d2128; border-color: #2f3540; color: #e7e9ee; }
+  .dark .j-sec .k small, .dark .togrow .lt small, .dark .chipx .src { color: #7d8491; }
+  .dark .tog { background: #363c47; } .dark .tog.on { background: #3b7cf0; }
+  .dark .j-howto { background: #1b1f26; color: #a3aab6; }
+  .dark .j-howto code { background: #13161b; border-color: #2a2f38; color: #e7e9ee; }
 </style>
 </head>
 <body>
@@ -264,6 +414,8 @@
   <button data-opt="b" aria-pressed="false">B · Home</button>
   <button data-opt="c" aria-pressed="false">C · List + detail</button>
   <button data-opt="m" aria-pressed="false">Chat (in A's frame)</button>
+  <button data-opt="j" aria-pressed="false">Claude jobs</button>
+  <button id="theme" style="margin-left:12px">◐ Dark</button>
   <span>Same project, three ways. Click cards, rows and checkboxes.</span>
 </nav>
 
@@ -529,6 +681,65 @@
   </div>
 </section>
 
+
+<!-- ================================ CLAUDE JOBS ================================ -->
+<section class="option" id="j">
+  <header class="a-top">
+    <div class="logo"><i>B</i>Baton</div>
+    <button class="a-proj">Roll a Fish <svg class="i"><use href="#down"/></svg></button>
+    <nav class="a-tabs"><button><svg class="i"><use href="#board"/></svg>Board</button><button><svg class="i"><use href="#file"/></svg>Notes</button><button><svg class="i"><use href="#msg"/></svg>Messages <span class="count">2</span></button><button class="on"><svg class="i"><use href="#users"/></svg>Team</button></nav>
+    <div class="a-search"><svg class="i"><use href="#search"/></svg>Search</div>
+    <span class="av md c">C</span>
+  </header>
+  <div class="j-wrap">
+    <div class="j-sub"><button>People</button><button class="on">Your Claudes</button><button>Who can do what</button></div>
+    <div class="j-head">
+      <div class="grow"><h2>Your Claudes</h2><p>Give each of your Claude chats a job. The team sees them as "ceo's Scripting Claude", "ceo's Video Claude" and so on.</p></div>
+      <button class="btn blue row"><svg class="i"><use href="#plus"/></svg>New job</button>
+    </div>
+    <div class="j-grid">
+      <div>
+        <div class="j-job on" data-job="s"><span class="j-ic" style="background:#2f62c9"><svg class="i"><use href="#file"/></svg></span><div class="grow"><div class="nm">Scripting <span class="dot g"></span></div><div class="ds">Writes and fixes the game's scripts</div><div class="mt">1 chat · 3 skills · takes Selling, Fixes</div></div></div>
+        <div class="j-job" data-job="m"><span class="j-ic" style="background:#1f7a55"><svg class="i"><use href="#clist"/></svg></span><div class="grow"><div class="nm">Managing <span class="dot n"></span></div><div class="ds">Plans the work, keeps to-dos tidy, answers the team</div><div class="mt">1 chat · 1 skill · takes everything unassigned</div></div></div>
+        <div class="j-job" data-job="v"><span class="j-ic" style="background:#b0602a"><svg class="i"><use href="#board"/></svg></span><div class="grow"><div class="nm">Videos <span class="dot y"></span></div><div class="ds">Makes reels and trailers</div><div class="mt">1 chat · 4 skills · takes Videos</div></div></div>
+        <button class="j-new"><svg class="i"><use href="#plus"/></svg>New job</button>
+        <div class="j-box">
+          <div class="bh">Chats without a job <span>on this PC</span></div>
+          <div class="j-chat"><svg class="i" style="color:#8a91a0"><use href="#msg"/></svg><div class="grow"><div class="cn trunc">Clout ad reel</div><div class="cm">Claude Code · 2 hours ago</div></div><button class="j-pick">Give it a job <svg class="i" style="width:14px;height:14px"><use href="#down"/></svg></button></div>
+          <div class="j-chat"><svg class="i" style="color:#8a91a0"><use href="#msg"/></svg><div class="grow"><div class="cn trunc">Roll a Fish UI Studio</div><div class="cm">Claude Code · yesterday</div></div><button class="j-pick">Give it a job <svg class="i" style="width:14px;height:14px"><use href="#down"/></svg></button></div>
+          <div class="j-chat"><svg class="i" style="color:#8a91a0"><use href="#msg"/></svg><div class="grow"><div class="cn trunc">Shop prices brainstorm</div><div class="cm">Claude app · 3 days ago</div></div><button class="j-pick">Give it a job <svg class="i" style="width:14px;height:14px"><use href="#down"/></svg></button></div>
+        </div>
+      </div>
+
+      <div class="j-detail">
+        <div class="j-title">
+          <span class="j-ic" style="background:#2f62c9;width:40px;height:40px"><svg class="i"><use href="#file"/></svg></span>
+          <div class="grow"><h3>Scripting</h3><div class="as">Shows to the team as <b>ceo's Scripting Claude</b></div></div>
+          <span class="pill g" style="background:rgba(30,158,96,.12);color:#1e9e60"><span class="dot g"></span>Working now</span>
+        </div>
+        <div class="j-sec"><div class="k">What it does<small>Read at the start of every chat</small></div>
+          <div class="j-text">You write and fix scripts for Roll a Fish in Roblox Studio. Back up a script to ServerStorage before changing it, and mark it "in use" in Baton while you work on it.</div></div>
+        <div class="j-sec"><div class="k">Takes to-dos labelled<small>New ones go to this chat</small></div>
+          <div class="chips"><span class="chipx"><span class="lab sell">Selling</span><span class="x">×</span></span><span class="chipx"><span class="lab fix">Fixes</span><span class="x">×</span></span><span class="chipx addc">+ Add a label</span></div></div>
+        <div class="j-sec"><div class="k">Skills it gets<small>Installed into its chats</small></div>
+          <div class="chips"><span class="chipx">roblox-dev <span class="src">yours</span></span><span class="chipx">human-engineering-roblox <span class="src">yours</span></span><span class="chipx">stud-building <span class="src">shared by Boe</span></span><span class="chipx addc">+ Add a skill</span></div></div>
+        <div class="j-sec"><div class="k">What it may do</div>
+          <div>
+            <div class="togrow"><span class="lt">Edit notes and to-dos</span><span class="tog on"></span></div>
+            <div class="togrow"><span class="lt">Answer the team's questions for me<small>Off: it asks you first</small></span><span class="tog"></span></div>
+            <div class="togrow"><span class="lt">Take over work other Claudes hand on</span><span class="tog on"></span></div>
+            <div class="togrow"><span class="lt">Hand its work on when it runs out of usage</span><span class="tog on"></span></div>
+          </div></div>
+        <div class="j-sec"><div class="k">Chats doing this job</div>
+          <div>
+            <div class="row"><span class="av c">C<span class="ai">AI</span></span><div class="grow"><b style="font-weight:600">Roll a Fish scripting</b><div style="color:#8a91a0;font-size:12.5px">Claude Code on this PC · active 3 min ago</div></div><button class="btn">Open chat</button></div>
+            <div class="j-howto">To give another chat this job, pick it under "Chats without a job", or type <code>/baton scripting</code> in that chat.</div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <script>
   const pick = (id) => {
     document.querySelectorAll('.switcher [data-opt]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.opt === id[0])));
@@ -581,7 +792,14 @@
     window.__chatMention = () => { input.value = "Can you check the receipt when you're back, @"; pop.classList.add('on'); };
   })();
 
+
+  // jobs
+  document.querySelectorAll('.tog').forEach((t) => t.addEventListener('click', () => t.classList.toggle('on')));
+  document.querySelectorAll('.j-job').forEach((j) => j.addEventListener('click', () => document.querySelectorAll('.j-job').forEach((x) => x.classList.toggle('on', x === j))));
+
   // deep links for screenshots: #a, #a-card, #b, #c
+  const q = new URLSearchParams(location.search); if (q.get('theme') === 'dark') document.documentElement.classList.add('dark');
+  document.getElementById('theme').addEventListener('click', () => document.documentElement.classList.toggle('dark'));
   const h = new URLSearchParams(location.search).get('v');
   if (h) { document.documentElement.classList.add('shot'); pick(h); if (h === 'a-card') openPanel(true); if (h === 'm-mention') window.__chatMention(); }
 </script>
