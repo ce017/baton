@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Baton — professional directions</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .switcher { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #111318; color: #e8e8e8; font-size: 13px; }
+  .switcher b { margin-right: 10px; }
+  .switcher button { border: 0; background: none; color: #9aa0aa; padding: 6px 12px; border-radius: 7px; }
+  .switcher button[aria-pressed='true'] { background: #e8e8e8; color: #111; font-weight: 600; }
+  .switcher span { margin-left: auto; color: #7d838d; }
+  .option { display: none; height: calc(100vh - 44px); overflow: hidden; position: relative; }
+  .option.on { display: block; }
+  .option:not(.on) { display: none !important; }
+  #b.on, #c.on { display: grid; }
+  .shot *, .shot *::before, .shot *::after { animation: none !important; transition: none !important; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1; min-width: 0; }
+  .trunc { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* avatars: initials, one colour per person; their Claude carries a small "AI" corner */
+  .av { position: relative; flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-size: 11px; font-weight: 600; }
+  .av.md { width: 30px; height: 30px; font-size: 13px; }
+  .av.c { background: #3f7d3a; } .av.b { background: #2f62c9; } .av.l { background: #b0602a; }
+  .av .ai { position: absolute; right: -5px; bottom: -4px; font-size: 7.5px; font-weight: 700; letter-spacing: .02em; background: #111318; color: #fff; padding: 0 3px; border-radius: 4px; line-height: 12px; border: 1.5px solid #fff; }
+  .stack { display: flex; } .stack .av { margin-left: -6px; border: 2px solid #fff; } .stack .av:first-child { margin-left: 0; }
+
+  /* ================================ A · BOARD (crisp, blue) ================================ */
+  #a { background: #fff; color: #1a1d23; }
+  .a-top { height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid #e6e8ec; }
+  .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .logo i { width: 24px; height: 24px; border-radius: 6px; background: #1a1d23; color: #fff; font-style: normal; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+  .a-proj { display: flex; align-items: center; gap: 6px; border: 1px solid #e1e4e9; background: #fff; border-radius: 7px; padding: 5px 10px; font-weight: 600; }
+  .a-tabs { display: flex; height: 56px; margin-left: 8px; }
+  .a-tabs button { border: 0; background: none; padding: 0 14px; color: #5b6270; font-weight: 500; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; }
+  .a-tabs button.on { color: #1a1d23; border-bottom-color: #1d6fe8; }
+  .count { background: #1d6fe8; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 600; padding: 0 6px; line-height: 17px; }
+  .a-search { margin-left: auto; display: flex; align-items: center; gap: 8px; width: 240px; border: 1px solid #e1e4e9; border-radius: 7px; padding: 6px 10px; color: #8a91a0; }
+  .a-now { margin: 16px 20px 0; border: 1px solid #e6e8ec; border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+  .a-now .lbl { font-size: 12px; font-weight: 600; color: #8a91a0; text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+  .now { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: #f5f6f8; max-width: 380px; }
+  .now b { font-weight: 600; white-space: nowrap; }
+  .now span { color: #5b6270; }
+  .now.paused { background: #fff7e8; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.g { background: #1e9e60; } .dot.y { background: #e09b23; } .dot.n { background: #c3c8d0; }
+  .link { border: 0; background: none; padding: 0; color: #1d6fe8; font-weight: 600; white-space: nowrap; }
+  .a-notice { margin: 12px 20px 0; display: flex; align-items: center; gap: 8px; background: #eef4ff; color: #22489a; border-radius: 8px; padding: 8px 12px; }
+  .a-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding: 18px 20px; transition: margin-right 200ms; }
+  .a-board.narrow { margin-right: 400px; }
+  .col-h { display: flex; align-items: center; gap: 8px; padding: 0 2px 10px; font-weight: 600; font-size: 13px; }
+  .col-h .n { color: #8a91a0; font-weight: 500; }
+  .col-h .add { margin-left: auto; border: 0; background: none; color: #8a91a0; border-radius: 6px; width: 24px; height: 24px; display: grid; place-items: center; }
+  .col-h .add:hover { background: #f0f2f5; color: #1a1d23; }
+  .tcard { border: 1px solid #e3e6eb; border-radius: 9px; padding: 12px; margin-bottom: 10px; background: #fff; box-shadow: 0 1px 2px rgba(16,24,40,.04); cursor: pointer; transition: border-color 120ms, box-shadow 120ms; }
+  .tcard:hover { border-color: #c9ced6; box-shadow: 0 4px 12px rgba(16,24,40,.07); }
+  .tcard.sel { border-color: #1d6fe8; box-shadow: 0 0 0 3px rgba(29,111,232,.12); }
+  .tcard .t { font-weight: 600; line-height: 1.35; }
+  .meta { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: #6b7280; font-size: 12.5px; }
+  .meta .stack { margin-left: auto; }
+  .lab { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 5px; }
+  .lab.sell { background: #fdf0dc; color: #94580a; } .lab.arc { background: #e3eefc; color: #2353a8; } .lab.fix { background: #e7f4ec; color: #22693f; }
+  .cl { margin-top: 10px; padding-top: 9px; border-top: 1px solid #f0f2f5; font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+  .cl.g { color: #187a4b; } .cl.y { color: #9a5d00; }
+  .add-row { display: flex; align-items: center; gap: 6px; color: #8a91a0; padding: 6px 4px; border: 0; background: none; font-weight: 500; }
+  .done .t { color: #8a91a0; text-decoration: line-through; }
+  .panel { position: absolute; top: 56px; right: 0; bottom: 0; width: 400px; background: #fff; border-left: 1px solid #e6e8ec; box-shadow: -10px 0 30px rgba(16,24,40,.06); padding: 18px 22px; overflow: auto; display: none; }
+  .panel.on { display: block; }
+  .panel h2 { margin: 6px 0 14px; font-size: 20px; line-height: 1.3; letter-spacing: -.01em; }
+  .crumb { display: flex; align-items: center; gap: 8px; color: #8a91a0; font-size: 12.5px; }
+  .crumb .x { margin-left: auto; border: 0; background: none; color: #8a91a0; font-size: 18px; }
+  .fields { display: grid; grid-template-columns: 96px 1fr; gap: 10px 12px; align-items: center; margin-bottom: 18px; }
+  .fields .k { color: #6b7280; }
+  .sel-box { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e1e4e9; border-radius: 6px; padding: 3px 8px; }
+  .left-off { border: 1px solid #f2d9a6; background: #fffaf0; border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; }
+  .left-off .h { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #8a5300; margin-bottom: 6px; }
+  .left-off p { margin: 0 0 10px; color: #4b5260; }
+  .btn { border: 1px solid #d9dde3; background: #fff; border-radius: 7px; padding: 7px 12px; font-weight: 600; transition: background-color 120ms, transform 100ms; }
+  .btn:hover { background: #f6f7f9; } .btn:active { transform: translateY(1px); }
+  .btn.blue { background: #1d6fe8; border-color: #1d6fe8; color: #fff; } .btn.blue:hover { background: #185fca; }
+  .sec { font-size: 12px; font-weight: 600; color: #8a91a0; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .bar { height: 5px; background: #eef0f3; border-radius: 3px; margin-bottom: 8px; } .bar i { display: block; height: 100%; width: 33%; background: #1e9e60; border-radius: 3px; }
+  .ck { display: flex; align-items: center; gap: 10px; padding: 5px 0; cursor: pointer; }
+  .ck .b { width: 16px; height: 16px; border: 1.6px solid #b8bec8; border-radius: 4px; display: grid; place-items: center; }
+  .ck.on .b { background: #1e9e60; border-color: #1e9e60; } .ck.on .b::after { content: ''; width: 8px; height: 4px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+  .ck.on span { color: #8a91a0; text-decoration: line-through; }
+  .act { display: flex; gap: 10px; margin-bottom: 12px; }
+  .act .who { font-weight: 600; } .act .when { color: #8a91a0; font-size: 12px; margin-left: 6px; }
+  .input { width: 100%; border: 1px solid #e1e4e9; border-radius: 8px; padding: 9px 11px; outline: none; }
+  .input:focus { border-color: #1d6fe8; box-shadow: 0 0 0 3px rgba(29,111,232,.12); }
+
+  /* ================================ B · HOME (warm, green) ================================ */
+  #b { display: grid; grid-template-columns: 236px 1fr; background: #faf8f5; color: #23211d; }
+  .b-side { background: #fff; border-right: 1px solid #ece8e1; padding: 16px 12px; display: flex; flex-direction: column; }
+  .b-proj { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; font-weight: 600; font-size: 15px; }
+  .b-proj i { width: 30px; height: 30px; border-radius: 8px; background: #1f7a55; color: #fff; font-style: normal; display: grid; place-items: center; font-weight: 700; }
+  .b-nav button { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 8px 10px; border-radius: 8px; color: #5f5a52; font-weight: 500; text-align: left; }
+  .b-nav button:hover { background: #f5f2ed; }
+  .b-nav button.on { background: #ebf4ef; color: #1f6a4b; font-weight: 600; }
+  .b-nav .badge { margin-left: auto; background: #1f7a55; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 600; padding: 0 6px; line-height: 17px; }
+  .b-me { margin-top: auto; border: 1px solid #ece8e1; border-radius: 10px; padding: 10px; background: #fffdf9; }
+  .b-me .s { color: #8a6418; font-size: 12.5px; }
+  .b-main { overflow: auto; padding: 30px 40px; }
+  .b-main .wrap { max-width: 1000px; }
+  .b-main h1 { font-family: 'Sitka Heading', 'Segoe UI Variable Display', Georgia, serif; font-weight: 600; font-size: 28px; letter-spacing: -.01em; margin: 0 0 2px; }
+  .b-main .sub { color: #7a746a; margin: 0 0 22px; font-size: 15px; }
+  .b-card { background: #fff; border: 1px solid #ece8e1; border-radius: 12px; margin-bottom: 18px; }
+  .b-card .hd { display: flex; align-items: center; gap: 8px; padding: 14px 18px 0; font-weight: 600; font-size: 15px; }
+  .b-card .hd .more { margin-left: auto; color: #1f6a4b; font-weight: 600; font-size: 13px; border: 0; background: none; }
+  .b-ask { display: flex; align-items: center; gap: 14px; padding: 14px 18px 16px; }
+  .b-ask .q { flex: 1; } .b-ask .q b { font-weight: 600; } .b-ask .q div { color: #7a746a; font-size: 12.5px; margin-top: 1px; }
+  .gbtn { white-space: nowrap; border: 1px solid #1f7a55; background: #1f7a55; color: #fff; border-radius: 8px; padding: 8px 14px; font-weight: 600; }
+  .gbtn:hover { background: #19674a; }
+  .gbtn.ghost { background: #fff; color: #23211d; border-color: #dcd6cc; }
+  .gbtn.sm { padding: 5px 10px; font-size: 13px; }
+  .tbl { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .tbl td { padding: 12px 18px; border-top: 1px solid #f2eee8; vertical-align: middle; }
+  .tbl .who { width: 190px; font-weight: 600; }
+  .tbl .when { width: 110px; color: #9a948a; text-align: right; font-size: 13px; }
+  .tbl .small { color: #8a847a; font-size: 12.5px; margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+  .pill.g { background: #e7f4ec; color: #1f6a4b; } .pill.y { background: #fdf2de; color: #8a5600; } .pill.n { background: #f2efea; color: #7a746a; }
+  .two { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; }
+  .li { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-top: 1px solid #f2eee8; }
+  .li:first-of-type { border-top: 0; }
+  .circ { width: 18px; height: 18px; border: 1.7px solid #c4bdb1; border-radius: 50%; flex: none; cursor: pointer; display: grid; place-items: center; }
+  .li.on .circ { background: #1f7a55; border-color: #1f7a55; } .li.on .circ::after { content: ''; width: 7px; height: 4px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+  .li.on .tt { color: #a39d93; text-decoration: line-through; }
+  .note-li { padding: 10px 18px; border-top: 1px solid #f2eee8; display: flex; gap: 10px; }
+  .note-li:first-of-type { border-top: 0; }
+  .note-li .s { color: #8a847a; font-size: 12.5px; }
+  .b-add { display: flex; align-items: center; gap: 6px; padding: 10px 18px 14px; color: #8a847a; border: 0; background: none; font-weight: 500; }
+
+  /* ================================ C · LIST + DETAIL (dark sidebar, teal) ================================ */
+  #c { display: grid; grid-template-columns: 244px 1fr 384px; background: #fff; color: #1b1f27; }
+  .c-side { background: #1b1f27; color: #c5cad4; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .c-side .ws { display: flex; align-items: center; gap: 9px; padding: 4px 8px 12px; color: #fff; font-weight: 600; }
+  .c-side .ws i { width: 24px; height: 24px; border-radius: 6px; background: #fff; color: #1b1f27; font-style: normal; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+  .c-search { display: flex; align-items: center; gap: 8px; background: #262b35; border-radius: 7px; padding: 6px 10px; color: #8c93a1; margin-bottom: 10px; }
+  .c-h { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #7c8392; padding: 12px 8px 6px; }
+  .c-item { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 7px; }
+  .c-item.on { background: #2e3440; color: #fff; }
+  .c-item .sq { width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700; }
+  .c-item .st { margin-left: auto; font-size: 12px; color: #8c93a1; }
+  .c-item .av .ai { border-color: #1b1f27; }
+  .c-main { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid #e7e9ee; }
+  .c-head { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid #eef0f3; }
+  .c-head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .seg { display: flex; background: #f1f3f6; border-radius: 8px; padding: 3px; }
+  .seg button { border: 0; background: none; padding: 4px 12px; border-radius: 6px; color: #5b6270; font-weight: 500; }
+  .seg button.on { background: #fff; color: #1b1f27; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .tbtn { margin-left: auto; display: flex; align-items: center; gap: 6px; border: 0; background: #0e8a7e; color: #fff; border-radius: 8px; padding: 7px 12px; font-weight: 600; }
+  .filters { display: flex; gap: 6px; padding: 12px 22px 4px; }
+  .filters button { border: 1px solid #e3e6eb; background: #fff; border-radius: 20px; padding: 3px 11px; color: #5b6270; font-size: 13px; }
+  .filters button.on { border-color: #0e8a7e; color: #0b6f66; background: #eaf6f4; font-weight: 600; }
+  .c-warn { margin: 10px 22px 4px; display: flex; align-items: center; gap: 8px; background: #fff8e6; border-left: 3px solid #e3a22e; border-radius: 0 7px 7px 0; padding: 8px 12px; color: #6b4b0e; }
+  .grp { padding: 14px 22px 4px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: #3c4250; }
+  .grp .n { color: #9aa0aa; font-weight: 500; }
+  .lr { display: grid; grid-template-columns: 22px 1fr 170px 130px; align-items: center; gap: 12px; padding: 0 22px; height: 46px; border-top: 1px solid #f1f3f6; cursor: pointer; }
+  .lr:hover { background: #fafbfc; }
+  .lr.sel { background: #effaf8; box-shadow: inset 3px 0 0 #0e8a7e; }
+  .lr .t { font-weight: 500; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .lr .t span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .lr .as { display: flex; align-items: center; gap: 7px; color: #4b5260; font-size: 13px; }
+  .lr .s { font-size: 12.5px; display: flex; align-items: center; gap: 6px; color: #6b7280; }
+  .stat { width: 16px; height: 16px; border-radius: 50%; border: 1.8px solid #b9bfc9; }
+  .stat.prog { border-color: #0e8a7e; background: conic-gradient(#0e8a7e 0 50%, transparent 50%); }
+  .stat.pause { border-color: #e3a22e; background: conic-gradient(#e3a22e 0 33%, transparent 33%); }
+  .stat.done { border-color: #1e9e60; background: #1e9e60; }
+  .c-detail { padding: 18px 22px; overflow: auto; }
+  .c-detail h2 { margin: 4px 0 14px; font-size: 19px; line-height: 1.3; }
+  .c-detail .left-off { border-color: #f0d7a3; background: #fffaf0; }
+  .tl { position: relative; padding-left: 18px; }
+  .tl::before { content: ''; position: absolute; left: 11px; top: 6px; bottom: 6px; width: 1.5px; background: #eceef2; }
+  .tl .ev { position: relative; display: flex; gap: 10px; margin-bottom: 12px; }
+  .tl .ev .av { margin-left: -18px; border: 2px solid #fff; }
+  .tl .ev .w { font-weight: 600; } .tl .ev .when { color: #9aa0aa; font-size: 12px; margin-left: 6px; }
+  .tl .ev .txt { color: #3c4250; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="lock" viewBox="0 0 24 24"><rect x="4.5" y="11" width="15" height="10" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></symbol>
+  <symbol id="msg" viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="clist" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="pause" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></symbol>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M3.5 10.5 12 3.5l8.5 7V20a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="file" viewBox="0 0 24 24"><path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-10z"/><path d="M14 3.5v5h5"/></symbol>
+  <symbol id="users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/></symbol>
+  <symbol id="board" viewBox="0 0 24 24"><rect x="3.5" y="4" width="5" height="16" rx="1.5"/><rect x="10.5" y="4" width="5" height="11" rx="1.5"/><rect x="17.5" y="4" width="3" height="7" rx="1.5"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="right" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></symbol>
+  <symbol id="todo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+</svg>
+
+<nav class="switcher" aria-label="Directions">
+  <b>Baton · professional directions</b>
+  <button data-opt="a" aria-pressed="true">A · Board</button>
+  <button data-opt="b" aria-pressed="false">B · Home</button>
+  <button data-opt="c" aria-pressed="false">C · List + detail</button>
+  <span>Same project, three ways. Click cards, rows and checkboxes.</span>
+</nav>
+
+<!-- ================================ A · BOARD ================================ -->
+<section class="option on" id="a">
+  <header class="a-top">
+    <div class="logo"><i>B</i>Baton</div>
+    <button class="a-proj">Roll a Fish <svg class="i"><use href="#down"/></svg></button>
+    <nav class="a-tabs"><button class="on"><svg class="i"><use href="#board"/></svg>Board</button><button><svg class="i"><use href="#file"/></svg>Notes</button><button><svg class="i"><use href="#msg"/></svg>Messages <span class="count">1</span></button><button><svg class="i"><use href="#users"/></svg>Team</button></nav>
+    <div class="a-search"><svg class="i"><use href="#search"/></svg>Search</div>
+    <span class="av md c">C</span>
+  </header>
+
+  <div class="a-now">
+    <span class="lbl">Right now</span>
+    <div class="now"><span class="dot g"></span><span class="av b">B<span class="ai">AI</span></span><b>Boe's Claude</b><span class="trunc">Adding a "sell one fish" button</span></div>
+    <div class="now paused"><span class="dot y"></span><span class="av c">C<span class="ai">AI</span></span><b>Your Claude</b><span class="trunc">Paused at step 2 of 3</span><button class="link" data-open>Hand over</button></div>
+    <div class="now"><span class="dot n"></span><span class="av c">C</span><b>You</b><span class="trunc">At training until 18:00</span></div>
+  </div>
+  <div class="a-notice"><svg class="i"><use href="#lock"/></svg>Boe's Claude is editing <b>the fish selling script</b>. Please don't change it until it's done.</div>
+
+  <div class="a-board" id="a-board">
+    <div>
+      <div class="col-h"><span class="dot n"></span>To do <span class="n">2</span><button class="add" title="Add"><svg class="i"><use href="#plus"/></svg></button></div>
+      <div class="tcard"><div class="t">Show a receipt after selling</div><div class="meta"><span class="lab sell">Selling</span><span class="row" style="gap:4px"><svg class="i" style="width:14px;height:14px"><use href="#clist"/></svg>0/2</span><span class="stack"><span class="av c">C<span class="ai">AI</span></span></span></div></div>
+      <div class="tcard"><div class="t">Arctic plots for the new world</div><div class="meta"><span class="lab arc">Arctic</span><span class="row" style="gap:4px"><svg class="i" style="width:14px;height:14px"><use href="#msg"/></svg>2</span><span class="stack"><span class="av c">C</span></span></div></div>
+      <button class="add-row"><svg class="i"><use href="#plus"/></svg>Add a to-do</button>
+    </div>
+    <div>
+      <div class="col-h"><span class="dot g"></span>In progress <span class="n">2</span><button class="add"><svg class="i"><use href="#plus"/></svg></button></div>
+      <div class="tcard" data-open id="a-sel"><div class="t">Sell all skips favourite fish</div><div class="meta"><span class="lab sell">Selling</span><span class="row" style="gap:4px"><svg class="i" style="width:14px;height:14px"><use href="#clist"/></svg>1/3</span><span class="row" style="gap:4px"><svg class="i" style="width:14px;height:14px"><use href="#msg"/></svg>1</span><span class="stack"><span class="av c">C<span class="ai">AI</span></span></span></div><div class="cl y"><svg class="i" style="width:14px;height:14px"><use href="#pause"/></svg>Paused: your Claude ran out of usage</div></div>
+      <div class="tcard"><div class="t">"Sell one fish" button</div><div class="meta"><span class="lab sell">Selling</span><span class="stack"><span class="av b">B<span class="ai">AI</span></span></span></div><div class="cl g"><span class="dot g"></span>Boe's Claude is working on this</div></div>
+    </div>
+    <div>
+      <div class="col-h"><span class="dot y"></span>Waiting on someone <span class="n">1</span><button class="add"><svg class="i"><use href="#plus"/></svg></button></div>
+      <div class="tcard"><div class="t">Pick the price for Arctic travel</div><div class="meta"><span class="lab arc">Arctic</span><span>Needs ceo</span><span class="stack"><span class="av b">B</span></span></div></div>
+    </div>
+    <div>
+      <div class="col-h"><span class="dot g" style="background:#8a91a0"></span>Done <span class="n">2</span></div>
+      <div class="tcard done"><div class="t">Fix the chef animations</div><div class="meta"><span class="lab fix">Fixes</span><span>Yesterday</span><span class="stack"><span class="av b">B</span></span></div></div>
+      <div class="tcard done"><div class="t">Leaderboard shows top 100</div><div class="meta"><span class="lab fix">Fixes</span><span>Monday</span><span class="stack"><span class="av b">B<span class="ai">AI</span></span></span></div></div>
+    </div>
+  </div>
+
+  <aside class="panel" id="a-panel">
+    <div class="crumb"><span class="dot g"></span>In progress<button class="x" id="a-close" aria-label="Close">×</button></div>
+    <h2>Sell all skips favourite fish</h2>
+    <div class="fields">
+      <span class="k">Status</span><span><span class="sel-box"><span class="dot g"></span>In progress <svg class="i" style="width:14px;height:14px"><use href="#down"/></svg></span></span>
+      <span class="k">Assigned to</span><span class="row"><span class="av c">C<span class="ai">AI</span></span>Your Claude</span>
+      <span class="k">Label</span><span><span class="lab sell">Selling</span></span>
+    </div>
+    <div class="left-off" id="a-left">
+      <div class="h"><svg class="i"><use href="#pause"/></svg>Paused 20 minutes ago</div>
+      <p>Your Claude ran out of usage at step 2 of 3. Its last note: "Favourites are skipped. The receipt is half written."</p>
+      <div class="row"><button class="btn blue" id="a-hand">Hand over to Boe's Claude</button><button class="btn">Wait for mine</button></div>
+    </div>
+    <div class="sec">Checklist · <span id="a-cnt">1 of 3</span></div>
+    <div class="bar"><i id="a-bar"></i></div>
+    <div class="ck on"><span class="b"></span><span>Skip favourite fish</span></div>
+    <div class="ck"><span class="b"></span><span>Show a receipt (sold and kept)</span></div>
+    <div class="ck"><span class="b"></span><span>Test with the starter fish</span></div>
+    <div class="sec" style="margin-top:18px">Activity</div>
+    <div class="act"><span class="av c">C</span><div><span class="who">ceo</span><span class="when">40 min ago</span><div>Keep favourites in the inventory and count them on the receipt.</div></div></div>
+    <div class="act"><span class="av c">C<span class="ai">AI</span></span><div><span class="who">Your Claude</span><span class="when">35 min ago</span><div>Step 1 is done. Starting the receipt.</div></div></div>
+    <input class="input" placeholder="Write a comment…" />
+  </aside>
+</section>
+
+<!-- ================================ B · HOME ================================ -->
+<section class="option" id="b">
+  <aside class="b-side">
+    <div class="b-proj"><i>R</i>Roll a Fish <svg class="i" style="margin-left:auto;color:#9a948a"><use href="#down"/></svg></div>
+    <nav class="b-nav">
+      <button class="on"><svg class="i"><use href="#home"/></svg>Home</button>
+      <button><svg class="i"><use href="#todo"/></svg>To-do</button>
+      <button><svg class="i"><use href="#file"/></svg>Notes</button>
+      <button><svg class="i"><use href="#msg"/></svg>Messages <span class="badge">1</span></button>
+      <button><svg class="i"><use href="#users"/></svg>Team</button>
+    </nav>
+    <div class="b-me">
+      <div class="row"><span class="av c">C<span class="ai">AI</span></span><b style="font-weight:600">Your Claude</b></div>
+      <div class="s" style="margin-top:6px">Paused · out of usage</div>
+      <button class="gbtn ghost sm" style="margin-top:8px;width:100%">Hand over its work</button>
+    </div>
+  </aside>
+  <main class="b-main">
+    <div class="wrap">
+      <h1>Good evening, ceo</h1>
+      <p class="sub">1 Claude is working on Roll a Fish. 1 thing needs your answer.</p>
+
+      <section class="b-card">
+        <div class="hd"><span class="dot y"></span>Needs your answer</div>
+        <div class="b-ask" id="b-ask">
+          <span class="av md b">B<span class="ai">AI</span></span>
+          <div class="q"><b>Boe's Claude:</b> Are you still working on "Sell all"? If not, I can finish it while you're at training.<div>3 minutes ago</div></div>
+          <button class="gbtn" data-b="Boe's Claude will finish Sell all.">Yes, hand it over</button>
+          <button class="gbtn ghost" data-b="Boe's Claude will leave it to you.">No, I'm on it</button>
+        </div>
+      </section>
+
+      <section class="b-card">
+        <div class="hd">What everyone's doing<button class="more">See the board</button></div>
+        <table class="tbl">
+          <tr><td class="who"><span class="row"><span class="av b">B<span class="ai">AI</span></span>Boe's Claude</span></td><td>Adding a "sell one fish" button<div class="small"><svg class="i" style="width:13px;height:13px"><use href="#lock"/></svg>Using the fish selling script, please don't edit it</div></td><td style="width:140px"><span class="pill g"><span class="dot g"></span>Working</span></td><td class="when">Now</td></tr>
+          <tr><td class="who"><span class="row"><span class="av c">C<span class="ai">AI</span></span>Your Claude</span></td><td>Making "Sell all" skip favourite fish<div class="small">Stopped at step 2 of 3: the receipt is half written</div></td><td><span class="pill y"><span class="dot y"></span>Paused</span></td><td class="when"><button class="gbtn ghost sm">Hand over</button></td></tr>
+          <tr><td class="who"><span class="row"><span class="av c">C</span>You</span></td><td>At training until 18:00</td><td><span class="pill n">Away</span></td><td class="when">40 min ago</td></tr>
+          <tr><td class="who"><span class="row"><span class="av l">L</span>Lucas</span></td><td style="color:#9a948a">Nothing yet</td><td><span class="pill n">Offline</span></td><td class="when">Yesterday</td></tr>
+        </table>
+      </section>
+
+      <div class="two">
+        <section class="b-card">
+          <div class="hd">Next up<button class="more">All to-dos</button></div>
+          <div style="margin-top:6px">
+            <div class="li"><span class="circ"></span><span class="tt grow">Show a receipt after selling</span><span class="lab sell">Selling</span><span class="av c">C<span class="ai">AI</span></span></div>
+            <div class="li"><span class="circ"></span><span class="tt grow">Arctic plots for the new world</span><span class="lab arc">Arctic</span><span class="av c">C</span></div>
+            <div class="li"><span class="circ"></span><span class="tt grow">Pick the price for Arctic travel</span><span class="lab arc">Arctic</span><span class="av c">C</span></div>
+          </div>
+          <button class="b-add"><svg class="i"><use href="#plus"/></svg>Add a to-do</button>
+        </section>
+        <section class="b-card">
+          <div class="hd">Pinned notes<button class="more">All notes</button></div>
+          <div style="margin-top:6px;padding-bottom:6px">
+            <div class="note-li"><svg class="i" style="color:#9a948a;margin-top:2px"><use href="#file"/></svg><div><div>Back up a script before changing it</div><div class="s">Team rule</div></div></div>
+            <div class="note-li"><svg class="i" style="color:#9a948a;margin-top:2px"><use href="#file"/></svg><div><div>Odds are locked: Legendary 0.5%</div><div class="s">Ask ceo before changing</div></div></div>
+            <div class="note-li"><svg class="i" style="color:#9a948a;margin-top:2px"><use href="#file"/></svg><div><div>How selling works</div><div class="s">Prices, Sell all, the Finn shop</div></div></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</section>
+
+<!-- ================================ C · LIST + DETAIL ================================ -->
+<section class="option" id="c">
+  <aside class="c-side">
+    <div class="ws"><i>B</i>Baton</div>
+    <div class="c-search"><svg class="i"><use href="#search"/></svg>Search</div>
+    <div class="c-h">Projects</div>
+    <div class="c-item on"><span class="sq" style="background:#0e8a7e">R</span>Roll a Fish</div>
+    <div class="c-item"><span class="sq" style="background:#6b5bb5">U</span>USAF V4</div>
+    <div class="c-h">Team</div>
+    <div class="c-item"><span class="av b">B<span class="ai">AI</span></span>Boe's Claude<span class="st"><span class="dot g" style="display:inline-block"></span></span></div>
+    <div class="c-item"><span class="av c">C<span class="ai">AI</span></span>Your Claude<span class="st">paused</span></div>
+    <div class="c-item"><span class="av b">B</span>Boe<span class="st">online</span></div>
+    <div class="c-item"><span class="av c">C</span>You<span class="st">away</span></div>
+    <div class="c-item"><span class="av l">L</span>Lucas<span class="st">offline</span></div>
+    <div class="c-item" style="margin-top:auto;color:#8c93a1"><svg class="i"><use href="#plus"/></svg>Invite someone</div>
+  </aside>
+
+  <main class="c-main">
+    <div class="c-head">
+      <h1>To-do</h1>
+      <div class="seg"><button class="on">List</button><button>Board</button></div>
+      <button class="tbtn"><svg class="i"><use href="#plus"/></svg>New to-do</button>
+    </div>
+    <div class="filters"><button class="on">Everything</button><button>Mine</button><button>Claudes</button><button>Needs me · 1</button></div>
+    <div class="c-warn"><svg class="i"><use href="#lock"/></svg>Boe's Claude is editing the fish selling script. Please don't change it right now.</div>
+
+    <div class="grp"><svg class="i"><use href="#down"/></svg>In progress <span class="n">2</span></div>
+    <div class="lr sel"><span class="stat pause"></span><span class="t"><span>Sell all skips favourite fish</span><span class="lab sell">Selling</span></span><span class="as"><span class="av c">C<span class="ai">AI</span></span>Your Claude</span><span class="s" style="color:#8a5600"><span class="dot y"></span>Paused</span></div>
+    <div class="lr"><span class="stat prog"></span><span class="t"><span>"Sell one fish" button</span><span class="lab sell">Selling</span></span><span class="as"><span class="av b">B<span class="ai">AI</span></span>Boe's Claude</span><span class="s" style="color:#187a4b"><span class="dot g"></span>Working now</span></div>
+    <div class="grp"><svg class="i"><use href="#down"/></svg>To do <span class="n">3</span></div>
+    <div class="lr"><span class="stat"></span><span class="t"><span>Show a receipt after selling</span><span class="lab sell">Selling</span></span><span class="as"><span class="av c">C<span class="ai">AI</span></span>Your Claude</span><span class="s">Next</span></div>
+    <div class="lr"><span class="stat"></span><span class="t"><span>Arctic plots for the new world</span><span class="lab arc">Arctic</span></span><span class="as"><span class="av c">C</span>You</span><span class="s">2 comments</span></div>
+    <div class="lr"><span class="stat"></span><span class="t"><span>Pick the price for Arctic travel</span><span class="lab arc">Arctic</span></span><span class="as"><span class="av c">C</span>You</span><span class="s" style="color:#8a5600">Needs you</span></div>
+    <div class="grp" style="color:#9aa0aa"><svg class="i"><use href="#right"/></svg>Done <span class="n">2</span></div>
+  </main>
+
+  <aside class="c-detail">
+    <div class="crumb"><span class="dot y"></span>In progress · Paused</div>
+    <h2>Sell all skips favourite fish</h2>
+    <div class="fields">
+      <span class="k">Assigned to</span><span class="row"><span class="av c">C<span class="ai">AI</span></span>Your Claude</span>
+      <span class="k">Label</span><span><span class="lab sell">Selling</span></span>
+      <span class="k">Started</span><span>Today, 17:02</span>
+    </div>
+    <div class="left-off" id="c-left">
+      <div class="h"><svg class="i"><use href="#pause"/></svg>Where it stopped</div>
+      <p>Out of usage at step 2 of 3, 20 minutes ago. Favourites are skipped; the receipt is half written.</p>
+      <div class="row"><button class="tbtn" style="margin:0" id="c-hand">Hand over to Boe's Claude</button><button class="btn">Wait</button></div>
+    </div>
+    <div class="sec">Checklist · 1 of 3</div>
+    <div class="ck on"><span class="b"></span><span>Skip favourite fish</span></div>
+    <div class="ck"><span class="b"></span><span>Show a receipt (sold and kept)</span></div>
+    <div class="ck"><span class="b"></span><span>Test with the starter fish</span></div>
+    <div class="sec" style="margin-top:18px">Updates</div>
+    <div class="tl">
+      <div class="ev"><span class="av c">C<span class="ai">AI</span></span><div><span class="w">Your Claude</span><span class="when">17:31</span><div class="txt">Step 1 done: favourites are skipped.</div></div></div>
+      <div class="ev"><span class="av c">C</span><div><span class="w">ceo</span><span class="when">17:20</span><div class="txt">Count kept fish on the receipt too.</div></div></div>
+      <div class="ev"><span class="av c">C<span class="ai">AI</span></span><div><span class="w">Your Claude</span><span class="when">17:02</span><div class="txt">Started. 3 steps.</div></div></div>
+    </div>
+    <input class="input" placeholder="Write an update or a question…" />
+  </aside>
+</section>
+
+<script>
+  const pick = (id) => {
+    document.querySelectorAll('.switcher [data-opt]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.opt === id[0])));
+    document.querySelectorAll('.option').forEach((o) => o.classList.toggle('on', o.id === id[0]));
+  };
+  document.querySelectorAll('.switcher [data-opt]').forEach((b) => b.addEventListener('click', () => pick(b.dataset.opt)));
+  // A: open the card's side panel
+  const panel = document.getElementById('a-panel'), board = document.getElementById('a-board'), sel = document.getElementById('a-sel');
+  const openPanel = (on) => { panel.classList.toggle('on', on); board.classList.toggle('narrow', on); sel.classList.toggle('sel', on); };
+  document.querySelectorAll('#a [data-open]').forEach((e) => e.addEventListener('click', () => openPanel(true)));
+  document.getElementById('a-close').addEventListener('click', () => openPanel(false));
+  addEventListener('keydown', (e) => e.key === 'Escape' && openPanel(false));
+  const done = (el, text) => { el.innerHTML = `<div class="h" style="color:#187a4b"><svg class="i"><use href="#clist"/></svg>${text}</div>`; };
+  document.getElementById('a-hand').addEventListener('click', () => done(document.getElementById('a-left'), "Handed over. Boe's Claude continues from step 2."));
+  document.getElementById('c-hand').addEventListener('click', () => done(document.getElementById('c-left'), "Handed over. Boe's Claude continues from step 2."));
+  // checklists
+  document.querySelectorAll('.ck').forEach((c) => c.addEventListener('click', () => {
+    c.classList.toggle('on');
+    const box = c.parentElement.querySelectorAll('.ck'); const n = [...box].filter((x) => x.classList.contains('on')).length;
+    if (c.closest('#a-panel')) { document.getElementById('a-cnt').textContent = `${n} of ${box.length}`; document.getElementById('a-bar').style.width = `${(n / box.length) * 100}%`; }
+  }));
+  document.querySelectorAll('.li .circ').forEach((c) => c.addEventListener('click', () => c.parentElement.classList.toggle('on')));
+  document.querySelectorAll('[data-b]').forEach((b) => b.addEventListener('click', () => {
+    document.getElementById('b-ask').innerHTML = `<div class="row" style="color:#1f6a4b;font-weight:600"><svg class="i"><use href="#clist"/></svg>Sent. ${b.dataset.b}</div>`;
+  }));
+  document.querySelectorAll('.lr').forEach((r) => r.addEventListener('click', () => document.querySelectorAll('.lr').forEach((x) => x.classList.toggle('sel', x === r))));
+  // deep links for screenshots: #a, #a-card, #b, #c
+  const h = new URLSearchParams(location.search).get('v');
+  if (h) { document.documentElement.classList.add('shot'); pick(h); if (h === 'a-card') openPanel(true); }
+</script>
+</body>
+</html>
