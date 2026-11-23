@@ -137,6 +137,9 @@ export class ProjectDO extends DurableObject<unknown> {
     } catch {
       this.fts = false;
     }
+    this.sql.exec(
+      'CREATE TABLE IF NOT EXISTS tickets(ticket TEXT PRIMARY KEY, user_id TEXT NOT NULL, user_name TEXT NOT NULL, expires_at INTEGER NOT NULL)',
+    );
   }
 
   // ---------------------------------------------------------------- setup & roles
@@ -474,7 +477,7 @@ export class ProjectDO extends DurableObject<unknown> {
     );
     if (clip(s.doing, 300) !== (before?.doing ?? '')) {
       this.log(actor, 'status', s.doing ? `now: ${s.doing}` : 'finished, no task set');
-    }
+    } else this.broadcast('status');
     return s.doing ? 'Handoff updated. Keep it current at each milestone.' : 'Status cleared.';
   }
 
@@ -746,6 +749,7 @@ export class ProjectDO extends DurableObject<unknown> {
     if (findSecretQuiet(e.text)) return 'skipped';
     if (e.kind === 'reply') {
       this.sql.exec('UPDATE status SET last_reply = ?, last_reply_at = ? WHERE actor_id = ?', clip(e.text, 400), now, me);
+      this.broadcast('status');
       return 'ok';
     }
     if (e.kind === 'session') return 'ok';
@@ -766,6 +770,7 @@ export class ProjectDO extends DurableObject<unknown> {
       "INSERT INTO events(actor_id, label, kind, text, ref, at) VALUES (?, ?, 'edit', ?, ?, ?)",
       me, actorLabel(actor), text, JSON.stringify(list.slice(-40)), now,
     );
+    this.broadcast('event');
     return 'ok';
   }
 
@@ -777,6 +782,153 @@ export class ProjectDO extends DurableObject<unknown> {
         'SELECT seq, label, kind, text, at FROM events ORDER BY seq DESC LIMIT ?', Math.min(200, limit),
       )
       .toArray();
+  }
+
+  // ---------------------------------------------------------------- desktop app (JSON)
+
+  /** Everything the app's Live screen and sidebar need in one call. */
+  async overview(actor: Actor) {
+    const role = this.need(actor, 'viewer');
+    this.seen(actor);
+    const now = Date.now();
+    const live = this.sql
+      .exec<{
+        actor_id: string;
+        label: string;
+        user_id: string;
+        doing: string;
+        where_: string;
+        next: string;
+        updated_at: number;
+        last_seen: number;
+        last_reply: string;
+        last_reply_at: number;
+      }>(
+        'SELECT actor_id, label, user_id, doing, where_, next, updated_at, last_seen, last_reply, last_reply_at FROM status WHERE last_seen > ? ORDER BY last_seen DESC LIMIT 30',
+        now - 30 * 864e5,
+      )
+      .toArray()
+      .map((s) => {
+        const edit = this.sql
+          .exec<{ text: string; at: number }>(
+            "SELECT text, at FROM events WHERE actor_id = ? AND kind = 'edit' ORDER BY seq DESC LIMIT 1",
+            s.actor_id,
+          )
+          .toArray()[0];
+        return {
+          id: s.actor_id,
+          label: s.label,
+          userId: s.user_id,
+          isAgent: s.actor_id.startsWith('a_'),
+          doing: s.doing,
+          where: s.where_,
+          next: s.next,
+          updatedAt: s.updated_at,
+          lastSeen: s.last_seen,
+          lastReply: s.last_reply,
+          lastReplyAt: s.last_reply_at,
+          lastEdit: edit?.text ?? '',
+          lastEditAt: edit?.at ?? 0,
+        };
+      });
+    const count = (q: string) => this.sql.exec<{ c: number }>(q).one().c;
+    return {
+      project: { slug: this.meta('slug') ?? '', name: this.meta('name') ?? '' },
+      role,
+      me: actorId(actor),
+      members: this.memberRows(),
+      live,
+      locks: this.liveLocks(now),
+      counts: {
+        pages: count("SELECT COUNT(*) AS c FROM items WHERE kind != 'skill'"),
+        skills: count("SELECT COUNT(*) AS c FROM items WHERE kind = 'skill'"),
+        openTasks: count("SELECT COUNT(*) AS c FROM tasks WHERE status != 'done'"),
+      },
+      unread: this.unread(actor, 99).length,
+      now,
+    };
+  }
+
+  /** Every page, decision and skill without bodies, for the folder tree. */
+  async tree(actor: Actor) {
+    this.need(actor, 'viewer');
+    return this.sql
+      .exec<{ path: string; title: string; kind: string; summary: string; pinned: number; version: number; updated_by_name: string; updated_at: number }>(
+        'SELECT path, title, kind, summary, pinned, version, updated_by_name, updated_at FROM items ORDER BY path_key',
+      )
+      .toArray();
+  }
+
+  async page(actor: Actor, path: string) {
+    this.need(actor, 'viewer');
+    this.seen(actor);
+    const it = this.item(path);
+    if (!it) return null;
+    return {
+      path: it.path,
+      title: it.title,
+      kind: it.kind,
+      summary: it.summary,
+      body: it.body,
+      tags: it.tags ? it.tags.split(',') : [],
+      pinned: it.pinned === 1,
+      version: it.version,
+      updatedBy: it.updated_by_name,
+      updatedAt: it.updated_at,
+      files: it.kind === 'skill' ? Object.keys(JSON.parse(it.files ?? '{}')) : [],
+      comments: this.comments(it.path, 100),
+    };
+  }
+
+  async taskRows(actor: Actor) {
+    this.need(actor, 'viewer');
+    return this.sql
+      .exec<{ id: string; n: number; title: string; status: string; assignee: string; area: string; notes: string; created_by_name: string; updated_by_name: string; updated_at: number }>(
+        `SELECT * FROM tasks WHERE status != 'done' OR updated_at > ? ORDER BY n DESC LIMIT 300`,
+        Date.now() - 14 * 864e5,
+      )
+      .toArray()
+      .map((t) => ({ ...t, comments: this.comments(t.id, 50) }));
+  }
+
+  /** The person's messages (newest last); opening them marks them read. */
+  async messageRows(actor: Actor) {
+    this.need(actor, 'viewer');
+    this.seen(actor);
+    const lastRead = this.cursor(actorId(actor)).inbox_seq;
+    const rows = this.visibleMessages(actor, 60).map((m) => ({ ...m, unread: m.seq > lastRead }));
+    if (rows.length) this.markRead(actor, rows);
+    return rows;
+  }
+
+  async issueTicket(actor: Actor): Promise<string> {
+    this.need(actor, 'viewer');
+    const ticket = crypto.randomUUID();
+    this.sql.exec('DELETE FROM tickets WHERE expires_at < ?', Date.now());
+    this.sql.exec('INSERT INTO tickets(ticket, user_id, user_name, expires_at) VALUES (?, ?, ?, ?)', ticket, actor.userId, actor.userName, Date.now() + 60_000);
+    return ticket;
+  }
+
+  /** WebSocket for live updates. Browsers can't send auth headers, so a one-use ticket is in the URL. */
+  async fetch(req: Request): Promise<Response> {
+    if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
+    const ticket = new URL(req.url).searchParams.get('ticket') ?? '';
+    const row = this.sql.exec<{ user_id: string; expires_at: number }>('SELECT user_id, expires_at FROM tickets WHERE ticket = ?', ticket).toArray()[0];
+    this.sql.exec('DELETE FROM tickets WHERE ticket = ?', ticket);
+    if (!row || row.expires_at < Date.now() || !this.role(row.user_id)) return new Response('Bad or expired ticket', { status: 401 });
+    const pair = new WebSocketPair();
+    this.ctx.acceptWebSocket(pair[1]);
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  async webSocketMessage(ws: WebSocket, msg: string | ArrayBuffer) {
+    if (msg === 'ping') ws.send('pong');
+  }
+
+  async webSocketClose(ws: WebSocket, code: number) {
+    try {
+      ws.close(code === 1005 ? 1000 : code);
+    } catch {}
   }
 
   // ---------------------------------------------------------------- internals
@@ -848,6 +1000,17 @@ export class ProjectDO extends DurableObject<unknown> {
     );
     // keep the feed bounded
     this.sql.exec('DELETE FROM events WHERE seq < (SELECT MAX(seq) - 5000 FROM events)');
+    this.broadcast(kind);
+  }
+
+  /** Tells every open app window something changed; they refetch what they show. */
+  private broadcast(kind: string) {
+    const msg = JSON.stringify({ type: 'changed', kind, at: Date.now() });
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(msg);
+      } catch {}
+    }
   }
 
   private item(path: string): ItemRow | undefined {

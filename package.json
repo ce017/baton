@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "server",
-    "connector"
+    "connector",
+    "app"
   ],
   "engines": {
     "node": ">=22"
@@ -12,9 +13,11 @@
   "scripts": {
     "dev": "npm run dev -w server",
     "test": "node scripts/smoke.mjs",
-    "typecheck": "npm run typecheck -w server"
+    "typecheck": "npm run typecheck -w server",
+    "app": "npm run dev -w app"
   },
   "allowScripts": {
-    "workerd@1.20261123.1": true
+    "workerd@1.20261123.1": true,
+    "esbuild@0.28.2": true
   }
 }

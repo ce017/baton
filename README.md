@@ -9,7 +9,17 @@ A shared workspace for people **and their Claudes**. When your Claude hits a usa
 - **Roles.** Owner, Admin, Member (read + post/comment/lock) and Viewer.
 - **Cheap on tokens.** The session brief is ~300–1,000 tokens. The bookkeeping runs in hooks, outside the model, and messages are injected only when there are some.
 
-Status: **M0**: server, 12 MCP tools, Claude Code hooks, CLI. The desktop app comes next (see [PLAN.md](PLAN.md)).
+Status: **M1**: server, 12 MCP tools, Claude Code hooks, CLI, and the desktop app (Live handoffs, Pages vault, Tasks board, Inbox, People & Claude with one-click Connect). Boards and Obsidian sync come next (see [PLAN.md](PLAN.md)).
+
+## Desktop app
+
+```bash
+npm run dev -w app                 # the UI in a browser at localhost:5173 (talks to the server)
+cd app && npx tauri dev            # the real window
+cd app && npx tauri build          # → src-tauri/target/release/Baton.exe and an NSIS installer
+```
+
+The app shares `~/.baton/config.json` with the CLI. **Connect to Claude Code** adds the MCP server and four hooks that run `Baton.exe --hook <Event>`, so Node isn't needed on the PC.
 
 ## How it fits together
 

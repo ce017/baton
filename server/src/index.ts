@@ -1,6 +1,6 @@
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import type { DirectoryDO, Identity } from './directory.ts';
-import type { ProjectDO, WriteArgs } from './project.ts';
+import type { ProjectDO, TaskArgs, WriteArgs } from './project.ts';
 import { type Actor, BatonError, isRole, readError, sha256 } from './shared.ts';
 import { buildMcpServer } from './tools.ts';
 
@@ -74,11 +74,12 @@ async function route(req: Request, env: Env): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const method = req.method;
 
-  // MCP clients send no Origin; browsers do. Refuse other sites' pages driving it.
+  // MCP clients send no Origin; browsers do. Only the desktop app (and local dev) may call from a page.
   const origin = req.headers.get('origin');
-  if (origin && origin !== url.origin && !origin.startsWith('tauri://') && origin !== 'http://tauri.localhost') {
+  if (origin && origin !== url.origin && !appOrigin(origin)) {
     return json({ error: 'Cross-origin requests are not allowed.' }, 403);
   }
+  if (method === 'OPTIONS') return new Response(null, { status: 204 });
 
   if (path === '/') return text('Baton server. Connect a Claude at /mcp with an agent key.');
   if (path === '/health') return json({ ok: true });
@@ -98,6 +99,14 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   const dir = directory(env);
+
+  // Live updates: the WebSocket carries a one-use ticket instead of a key.
+  const live = /^\/api\/projects\/([a-z0-9_-]+)\/live$/.exec(path);
+  if (live?.[1]) {
+    const p = await dir.findProject(live[1]);
+    if (!p) throw new BatonError('No such project.', 404);
+    return projectObj(env, p.id).fetch(req);
+  }
 
   if (path === '/api/admin/users' && method === 'POST') {
     if (!env.ADMIN_TOKEN) throw new BatonError('This server has no ADMIN_TOKEN set.', 503);
@@ -166,7 +175,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(actor, { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|post|comment|status|ticket)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
@@ -182,6 +191,23 @@ async function route(req: Request, env: Env): Promise<Response> {
       await dir.setMembership(target.userId, ref.id, role !== 'none');
       return json({ ok: true, message: msg });
     }
+    if (what === 'overview' && method === 'GET') return json(await obj.overview(actor));
+    if (what === 'tree' && method === 'GET') return json(await obj.tree(actor));
+    if (what === 'page' && method === 'GET') {
+      const page = await obj.page(actor, url.searchParams.get('path') ?? '');
+      return page ? json(page) : json({ error: 'No such page.' }, 404);
+    }
+    if (what === 'page' && method === 'PUT') return json({ message: await obj.write(actor, await body<WriteArgs>(req)) });
+    if (what === 'tasks' && method === 'GET') return json(await obj.taskRows(actor));
+    if (what === 'tasks' && method === 'POST') return json({ message: await obj.task(actor, await body<TaskArgs>(req)) });
+    if (what === 'messages' && method === 'GET') return json(await obj.messageRows(actor));
+    if (what === 'post' && method === 'POST') return json({ message: await obj.post(actor, await body<{ to: string; kind: string; text: string; ref?: string }>(req)) });
+    if (what === 'comment' && method === 'POST') {
+      const b = await body<{ target: string; text: string }>(req);
+      return json({ message: await obj.board(actor, { action: 'comment', target: b.target, text: b.text }) });
+    }
+    if (what === 'status' && method === 'POST') return json({ message: await obj.status(actor, await body<{ doing: string; where?: string; next?: string }>(req)) });
+    if (what === 'ticket' && method === 'POST') return json({ ticket: await obj.issueTicket(actor) });
     if (what === 'feed' && method === 'GET') return json(await obj.feed(actor, Number(url.searchParams.get('limit') ?? 50)));
     if (what === 'skills' && method === 'GET') return json(await obj.skillBundle(actor));
     if (what === 'skills' && method === 'POST') {
@@ -205,14 +231,31 @@ async function route(req: Request, env: Env): Promise<Response> {
   throw new BatonError(`No route ${method} ${path}.`, 404);
 }
 
+/** The desktop app's webview (Tauri on Windows/macOS/Linux) and local dev servers. */
+function appOrigin(origin: string): boolean {
+  return /^(tauri:\/\/localhost|https?:\/\/tauri\.localhost|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(origin);
+}
+
+function withCors(req: Request, res: Response): Response {
+  const origin = req.headers.get('origin');
+  if (!origin || !appOrigin(origin) || res.status === 101) return res;
+  const out = new Response(res.body, res);
+  out.headers.set('access-control-allow-origin', origin);
+  out.headers.set('access-control-allow-headers', 'authorization, content-type');
+  out.headers.set('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  out.headers.set('access-control-max-age', '86400');
+  out.headers.set('vary', 'origin');
+  return out;
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     try {
-      return await route(req, env);
+      return withCors(req, await route(req, env));
     } catch (e) {
       const { status, message } = readError(e);
       if (status >= 500) console.error(e);
-      return json({ error: message }, status);
+      return withCors(req, json({ error: message }, status));
     }
   },
 } satisfies ExportedHandler<Env>;
