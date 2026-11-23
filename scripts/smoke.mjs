@@ -185,5 +185,16 @@ check('app: tickets work once', reuse === 'refused', reuse);
 const cors = await fetch(`${SERVER}${P}/overview`, { headers: { authorization: `Bearer ${ceo.key}`, origin: 'https://evil.example' } });
 check('app: other sites are refused', cors.status === 403, String(cors.status));
 
+// ---- chat view
+const convs = (await rest('GET', `${P}/conversations`, boe.key)).data;
+const withCeo = convs.find((c) => c.key === ceo.name);
+check('chat: conversation list has Everyone and a direct chat with unread', convs[0]?.key === 'everyone' && withCeo?.unread >= 1, JSON.stringify(convs));
+const thread = (await rest('GET', `${P}/chat?with=${ceo.name}`, boe.key)).data;
+check('chat: direct thread holds the question', thread.some((m) => m.text.includes('Can you take T-1') && m.fromAgent), JSON.stringify(thread).slice(0, 300));
+const convs2 = (await rest('GET', `${P}/conversations`, boe.key)).data;
+check('chat: opening it marks it read', convs2.find((c) => c.key === ceo.name)?.unread === 0, JSON.stringify(convs2));
+const mineThread = (await rest('GET', `${P}/chat?with=${boe.name}`, ceo.key)).data;
+check("chat: the sender sees their own (their Claude's) message as theirs", mineThread.some((m) => m.mine && m.text.includes('Can you take T-1')), JSON.stringify(mineThread).slice(0, 300));
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

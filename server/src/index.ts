@@ -175,7 +175,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(actor, { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|post|comment|status|ticket)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
@@ -201,6 +201,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (what === 'tasks' && method === 'GET') return json(await obj.taskRows(actor));
     if (what === 'tasks' && method === 'POST') return json({ message: await obj.task(actor, await body<TaskArgs>(req)) });
     if (what === 'messages' && method === 'GET') return json(await obj.messageRows(actor));
+    if (what === 'conversations' && method === 'GET') return json(await obj.conversations(actor));
+    if (what === 'chat' && method === 'GET') return json(await obj.chat(actor, url.searchParams.get('with') ?? 'everyone'));
     if (what === 'post' && method === 'POST') return json({ message: await obj.post(actor, await body<{ to: string; kind: string; text: string; ref?: string }>(req)) });
     if (what === 'comment' && method === 'POST') {
       const b = await body<{ target: string; text: string }>(req);

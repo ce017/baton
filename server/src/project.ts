@@ -140,6 +140,11 @@ export class ProjectDO extends DurableObject<unknown> {
     this.sql.exec(
       'CREATE TABLE IF NOT EXISTS tickets(ticket TEXT PRIMARY KEY, user_id TEXT NOT NULL, user_name TEXT NOT NULL, expires_at INTEGER NOT NULL)',
     );
+    // Chat view: who sent a message (person, not actor) and what each person has read per conversation.
+    try {
+      this.sql.exec("ALTER TABLE messages ADD COLUMN from_user TEXT NOT NULL DEFAULT ''");
+    } catch {}
+    this.sql.exec('CREATE TABLE IF NOT EXISTS chat_reads(user_id TEXT NOT NULL, conv TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(user_id, conv))');
   }
 
   // ---------------------------------------------------------------- setup & roles
@@ -543,8 +548,8 @@ export class ProjectDO extends DurableObject<unknown> {
     }
     const now = Date.now();
     this.sql.exec(
-      'INSERT INTO messages(from_id, from_label, to_id, to_label, kind, text, ref, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      actorId(actor), actorLabel(actor), toId, toLabel, kind, text, a.ref ?? '', now,
+      'INSERT INTO messages(from_id, from_label, from_user, to_id, to_label, kind, text, ref, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      actorId(actor), actorLabel(actor), actor.userId, toId, toLabel, kind, text, a.ref ?? '', now,
     );
     this.log(actor, 'post', `posted a ${kind} to ${toLabel}: ${clip(text, 120)}`);
     return `Sent your ${kind} to ${toLabel}. They see it at their next prompt or session start.`;
@@ -889,6 +894,70 @@ export class ProjectDO extends DurableObject<unknown> {
       )
       .toArray()
       .map((t) => ({ ...t, comments: this.comments(t.id, 50) }));
+  }
+
+  /** Chat list: "Everyone" plus one direct conversation per other member, with last message and unread count. */
+  async conversations(actor: Actor) {
+    this.need(actor, 'viewer');
+    const me = actor.userId;
+    const readOf = (conv: string) =>
+      this.sql.exec<{ seq: number }>('SELECT seq FROM chat_reads WHERE user_id = ? AND conv = ?', me, conv).toArray()[0]?.seq ?? 0;
+    type Row = { from_label: string; text: string; at: number };
+    const everyoneLast = this.sql.exec<Row>("SELECT from_label, text, at FROM messages WHERE to_id = '*' ORDER BY seq DESC LIMIT 1").toArray()[0] ?? null;
+    const everyoneUnread = this.sql
+      .exec<{ c: number }>("SELECT COUNT(*) AS c FROM messages WHERE to_id = '*' AND from_user != ? AND seq > ?", me, readOf('everyone'))
+      .one().c;
+    const others = this.sql.exec<{ user_id: string; name: string; role: string }>('SELECT user_id, name, role FROM members WHERE user_id != ? ORDER BY name', me).toArray();
+    return [
+      { key: 'everyone', name: 'Everyone', role: null, last: everyoneLast, unread: everyoneUnread },
+      ...others.map((o) => ({
+        key: o.name,
+        name: o.name,
+        role: o.role,
+        last:
+          this.sql
+            .exec<Row>(
+              'SELECT from_label, text, at FROM messages WHERE (from_user = ? AND to_id = ?) OR (from_user = ? AND to_id = ?) ORDER BY seq DESC LIMIT 1',
+              o.user_id, me, me, o.user_id,
+            )
+            .toArray()[0] ?? null,
+        unread: this.sql
+          .exec<{ c: number }>('SELECT COUNT(*) AS c FROM messages WHERE from_user = ? AND to_id = ? AND seq > ?', o.user_id, me, readOf(o.name))
+          .one().c,
+      })),
+    ];
+  }
+
+  /** One conversation, oldest first, including your own messages. Opening it marks it read. */
+  async chat(actor: Actor, withKey: string) {
+    this.need(actor, 'viewer');
+    this.seen(actor);
+    const me = actor.userId;
+    type Msg = { seq: number; from_id: string; from_label: string; from_user: string; to_label: string; kind: string; text: string; ref: string; at: number };
+    let rows: Msg[];
+    let conv = 'everyone';
+    if (!withKey || withKey === 'everyone') {
+      rows = this.sql.exec<Msg>("SELECT seq, from_id, from_label, from_user, to_label, kind, text, ref, at FROM messages WHERE to_id = '*' ORDER BY seq DESC LIMIT 200").toArray();
+    } else {
+      const o = this.sql.exec<{ user_id: string; name: string }>('SELECT user_id, name FROM members WHERE name = ?', withKey.toLowerCase()).toArray()[0];
+      if (!o) throw new BatonError(`No member called "${withKey}".`, 404);
+      conv = o.name;
+      rows = this.sql
+        .exec<Msg>(
+          'SELECT seq, from_id, from_label, from_user, to_label, kind, text, ref, at FROM messages WHERE (from_user = ? AND to_id = ?) OR (from_user = ? AND to_id = ?) ORDER BY seq DESC LIMIT 200',
+          o.user_id, me, me, o.user_id,
+        )
+        .toArray();
+    }
+    rows.reverse();
+    const top = rows.length ? (rows[rows.length - 1]?.seq ?? 0) : 0;
+    if (top) {
+      this.sql.exec(
+        'INSERT INTO chat_reads(user_id, conv, seq) VALUES (?, ?, ?) ON CONFLICT(user_id, conv) DO UPDATE SET seq = MAX(seq, excluded.seq)',
+        me, conv, top,
+      );
+    }
+    return rows.map((r) => ({ ...r, mine: r.from_user === me, fromAgent: r.from_id.startsWith('a_') }));
   }
 
   /** The person's messages (newest last); opening them marks them read. */
