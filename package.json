@@ -1,0 +1,20 @@
+{
+  "name": "baton",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "connector"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev -w server",
+    "test": "node scripts/smoke.mjs",
+    "typecheck": "npm run typecheck -w server"
+  },
+  "allowScripts": {
+    "workerd@1.20261123.1": true
+  }
+}

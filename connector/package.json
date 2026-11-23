@@ -1,0 +1,11 @@
+{
+  "name": "@baton/connector",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "baton": "./cli.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0"
+  }
+}

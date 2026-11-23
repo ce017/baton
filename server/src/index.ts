@@ -1,0 +1,218 @@
+import { createMcpHandler } from '@modelcontextprotocol/server';
+import type { DirectoryDO, Identity } from './directory.ts';
+import type { ProjectDO, WriteArgs } from './project.ts';
+import { type Actor, BatonError, isRole, readError, sha256 } from './shared.ts';
+import { buildMcpServer } from './tools.ts';
+
+export { DirectoryDO } from './directory.ts';
+export { ProjectDO } from './project.ts';
+
+interface Env {
+  DIRECTORY: DurableObjectNamespace<DirectoryDO>;
+  PROJECT: DurableObjectNamespace<ProjectDO>;
+  /** Bootstrap secret for creating people (`wrangler secret put ADMIN_TOKEN`). */
+  ADMIN_TOKEN?: string;
+}
+
+const json = (data: unknown, status = 200) => Response.json(data, { status });
+const text = (body: string, status = 200) =>
+  new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+
+function directory(env: Env) {
+  return env.DIRECTORY.get(env.DIRECTORY.idFromName('directory'));
+}
+
+function projectObj(env: Env, projectId: string) {
+  return env.PROJECT.get(env.PROJECT.idFromName(projectId));
+}
+
+function bearer(req: Request): string | undefined {
+  const h = req.headers.get('authorization') ?? '';
+  const m = /^Bearer\s+(\S+)$/i.exec(h);
+  return m?.[1];
+}
+
+async function identify(req: Request, env: Env): Promise<Identity> {
+  const key = bearer(req);
+  if (!key) throw new BatonError('Missing "Authorization: Bearer <key>".', 401);
+  const who = await directory(env).identify(await sha256(key));
+  if (!who) throw new BatonError('Unknown or revoked key.', 401);
+  return who;
+}
+
+function toActor(who: Identity): Actor {
+  return { userId: who.userId, userName: who.userName, agentId: who.agentId, agentName: who.agentName };
+}
+
+/** Picks the project for a call: explicit slug, the agent's default, or the person's only one. */
+async function resolveProject(env: Env, who: Identity, slug?: string | null) {
+  const dir = directory(env);
+  const wanted = slug?.trim() || who.defaultProject;
+  if (wanted) {
+    const p = await dir.findProject(wanted);
+    if (!p) throw new BatonError(`No project "${wanted}".`, 404);
+    return { ref: p, obj: projectObj(env, p.id) };
+  }
+  const mine = await dir.projectsOf(who.userId);
+  if (mine.length === 1 && mine[0]) return { ref: mine[0], obj: projectObj(env, mine[0].id) };
+  if (!mine.length) throw new BatonError(`${who.userName} is not in any project yet.`, 404);
+  throw new BatonError(
+    `Say which project: ${mine.map((p) => p.slug).join(', ')} (or set a default with \`baton use <slug>\`).`,
+  );
+}
+
+async function body<T>(req: Request): Promise<T> {
+  try {
+    return (await req.json()) as T;
+  } catch {
+    throw new BatonError('The request body must be JSON.');
+  }
+}
+
+async function route(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const method = req.method;
+
+  // MCP clients send no Origin; browsers do. Refuse other sites' pages driving it.
+  const origin = req.headers.get('origin');
+  if (origin && origin !== url.origin && !origin.startsWith('tauri://') && origin !== 'http://tauri.localhost') {
+    return json({ error: 'Cross-origin requests are not allowed.' }, 403);
+  }
+
+  if (path === '/') return text('Baton server. Connect a Claude at /mcp with an agent key.');
+  if (path === '/health') return json({ ok: true });
+
+  if (path === '/mcp') {
+    const who = await identify(req, env);
+    const actor = toActor(who);
+    const handler = createMcpHandler(
+      () =>
+        buildMcpServer({
+          actor,
+          open: async (slug) => (await resolveProject(env, who, slug)).obj,
+        }),
+      { responseMode: 'json' },
+    );
+    return handler.fetch(req);
+  }
+
+  const dir = directory(env);
+
+  if (path === '/api/admin/users' && method === 'POST') {
+    if (!env.ADMIN_TOKEN) throw new BatonError('This server has no ADMIN_TOKEN set.', 503);
+    if (bearer(req) !== env.ADMIN_TOKEN) throw new BatonError('Wrong admin token.', 401);
+    const b = await body<{ name: string }>(req);
+    return json(await dir.createUser(b.name ?? ''));
+  }
+
+  const who = await identify(req, env);
+  const actor = toActor(who);
+
+  if (path === '/api/me' && method === 'GET') {
+    return json({
+      user: who.userName,
+      agent: who.agentName ?? null,
+      defaultProject: who.defaultProject ?? null,
+      projects: await dir.projectsOf(who.userId),
+      agents: who.agentId ? undefined : await dir.agentsOf(who.userId),
+    });
+  }
+
+  if (path === '/api/agents' && method === 'POST') {
+    if (who.agentId) throw new BatonError('Use your own (user) key to create agents.', 403);
+    const b = await body<{ name?: string }>(req);
+    return json(await dir.createAgent(who.userId, b.name ?? 'Claude'));
+  }
+
+  if (path === '/api/agents/rotate' && method === 'POST') {
+    if (who.agentId) throw new BatonError('Use your own (user) key to rotate agent keys.', 403);
+    const b = await body<{ name: string }>(req);
+    return json(await dir.rotateAgentKey(who.userId, b.name ?? ''));
+  }
+
+  if (path === '/api/agents/default' && method === 'POST') {
+    if (!who.agentId) throw new BatonError('Use the agent key whose default you want to set.', 403);
+    const b = await body<{ project: string }>(req);
+    const p = await dir.findProject(b.project ?? '');
+    if (!p) throw new BatonError(`No project "${b.project}".`, 404);
+    if (!(await projectObj(env, p.id).roleOf(who.userId))) throw new BatonError('You are not in that project.', 403);
+    await dir.setDefaultProject(who.agentId, p.slug);
+    return json({ ok: true, defaultProject: p.slug });
+  }
+
+  if (path === '/api/projects' && method === 'POST') {
+    if (who.agentId) throw new BatonError('Use your own (user) key to create projects.', 403);
+    const b = await body<{ slug: string; name?: string }>(req);
+    const ref = await dir.createProject(who.userId, b.slug ?? '', b.name ?? b.slug ?? '');
+    await projectObj(env, ref.id).init(ref, { userId: who.userId, name: who.userName });
+    return json(ref);
+  }
+
+  if (path === '/api/brief' && method === 'GET') {
+    const { obj } = await resolveProject(env, who, url.searchParams.get('project'));
+    return text(await obj.brief(actor));
+  }
+
+  if (path === '/api/hook/inbox' && method === 'GET') {
+    const { obj } = await resolveProject(env, who, url.searchParams.get('project'));
+    return text(await obj.hookInbox(actor));
+  }
+
+  if (path === '/api/events' && method === 'POST') {
+    const b = await body<{ project?: string; kind: 'edit' | 'reply' | 'session'; text: string }>(req);
+    if (!['edit', 'reply', 'session'].includes(b.kind)) throw new BatonError('kind is edit, reply or session.');
+    const { obj } = await resolveProject(env, who, b.project);
+    return text(await obj.event(actor, { kind: b.kind, text: String(b.text ?? '') }));
+  }
+
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import)$/.exec(path);
+  if (pm?.[1] && pm[2]) {
+    const { obj, ref } = await resolveProject(env, who, pm[1]);
+    const what = pm[2];
+    if (what === 'members' && method === 'GET') return json(await obj.members(actor));
+    if (what === 'members' && method === 'POST') {
+      if (who.agentId) throw new BatonError('Only people manage members, not their Claudes.', 403);
+      const b = await body<{ user: string; role: string }>(req);
+      const target = await dir.findUser(b.user ?? '');
+      if (!target) throw new BatonError(`No person called "${b.user}" on this server.`, 404);
+      const role = b.role === 'none' ? 'none' : isRole(b.role) ? b.role : null;
+      if (!role) throw new BatonError('role is admin, member, viewer or none.');
+      const msg = await obj.setMember(actor, target, role);
+      await dir.setMembership(target.userId, ref.id, role !== 'none');
+      return json({ ok: true, message: msg });
+    }
+    if (what === 'feed' && method === 'GET') return json(await obj.feed(actor, Number(url.searchParams.get('limit') ?? 50)));
+    if (what === 'skills' && method === 'GET') return json(await obj.skillBundle(actor));
+    if (what === 'skills' && method === 'POST') {
+      const b = await body<{ name: string; body: string; summary: string; files?: Record<string, string> }>(req);
+      return json({ message: await obj.skill(actor, { action: 'put', ...b }) });
+    }
+    if (what === 'import' && method === 'POST') {
+      const b = await body<{ pages: WriteArgs[] }>(req);
+      const results: { path: string; ok: boolean; message: string }[] = [];
+      for (const p of (b.pages ?? []).slice(0, 200)) {
+        try {
+          results.push({ path: p.path, ok: true, message: await obj.write(actor, p) });
+        } catch (e) {
+          results.push({ path: p.path, ok: false, message: readError(e).message });
+        }
+      }
+      return json({ results });
+    }
+  }
+
+  throw new BatonError(`No route ${method} ${path}.`, 404);
+}
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    try {
+      return await route(req, env);
+    } catch (e) {
+      const { status, message } = readError(e);
+      if (status >= 500) console.error(e);
+      return json({ error: message }, status);
+    }
+  },
+} satisfies ExportedHandler<Env>;

@@ -1,0 +1,15 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "baton",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "DIRECTORY", "class_name": "DirectoryDO" },
+      { "name": "PROJECT", "class_name": "ProjectDO" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DirectoryDO", "ProjectDO"] }],
+  "observability": { "enabled": true }
+}
