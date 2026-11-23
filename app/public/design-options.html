@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Baton — pick a look</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 1.45; color: #23211d; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .switcher { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: #1f1e1b; color: #f3f1ec; font-size: 13px; }
+  .switcher b { margin-right: 10px; font-weight: 600; }
+  .switcher button { border: 0; background: transparent; color: #bdb8ad; padding: 6px 12px; border-radius: 8px; transition: background-color 120ms, color 120ms; }
+  .switcher button:hover { color: #fff; }
+  .switcher button[aria-pressed='true'] { background: #f3f1ec; color: #1f1e1b; font-weight: 600; }
+  .switcher .hint { margin-left: auto; color: #8f8a7f; }
+  .option { display: none; min-height: calc(100% - 44px); }
+  .option.on { display: block; animation: fade 220ms cubic-bezier(.16,1,.3,1); }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+  .av { width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px; flex: none; position: relative; }
+  .av.sm { width: 24px; height: 24px; font-size: 11px; }
+  .av.ceo { background: #4d7c0f; } .av.boe { background: #2b59c3; } .av.lucas { background: #b5541e; }
+  .av .ai { position: absolute; right: -5px; bottom: -4px; background: #23211d; color: #fff; font-size: 8px; font-weight: 700; padding: 1px 4px; border-radius: 6px; border: 2px solid #fff; letter-spacing: .02em; }
+  .av.sm .ai { font-size: 7px; padding: 0 3px; right: -6px; bottom: -5px; }
+  .pulse { width: 9px; height: 9px; border-radius: 50%; background: #2e9d5b; display: inline-block; box-shadow: 0 0 0 0 rgba(46,157,91,.45); animation: pulse 2s infinite; }
+  .pulse.off { background: #c9c3b6; animation: none; box-shadow: none; }
+  .pulse.idle { background: #d9a12b; animation: none; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(46,157,91,0); } 100% { box-shadow: 0 0 0 0 rgba(46,157,91,0); } }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: #6f6a60; }
+  .small { font-size: 13px; }
+  .check { width: 22px; height: 22px; border-radius: 7px; border: 2px solid #c9c3b6; display: grid; place-items: center; flex: none; background: #fff; transition: background-color 150ms, border-color 150ms, transform 120ms; }
+  .check svg { opacity: 0; transform: scale(.6); transition: opacity 150ms, transform 200ms cubic-bezier(.34,1.56,.64,1); }
+  .todo.done .check { background: #2e9d5b; border-color: #2e9d5b; }
+  .todo.done .check svg { opacity: 1; transform: scale(1); }
+  .todo.done .t { text-decoration: line-through; color: #9a958a; }
+  .todo:active .check { transform: scale(.9); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* =================== A · Team room =================== */
+  #a { background: #fbf7f1; }
+  .a-top { display: flex; align-items: center; gap: 18px; padding: 16px 32px; }
+  .a-logo { font-weight: 800; font-size: 19px; letter-spacing: -.02em; display: flex; align-items: center; gap: 8px; }
+  .a-logo i { width: 28px; height: 28px; border-radius: 9px; background: #23211d; display: inline-block; position: relative; }
+  .a-logo i::after { content: ''; position: absolute; left: 6px; right: 6px; top: 12px; height: 5px; border-radius: 3px; background: linear-gradient(90deg, #fbf7f1 50%, #4f7df0 50%); }
+  .a-project { background: #fff; border: 1px solid #ece5d8; border-radius: 999px; padding: 6px 14px; font-weight: 600; }
+  .a-tabs { display: flex; gap: 4px; margin-left: 16px; }
+  .a-tabs button { border: 0; background: none; padding: 8px 16px; border-radius: 999px; color: #6f6a60; font-weight: 600; }
+  .a-tabs button.on { background: #23211d; color: #fbf7f1; }
+  .a-wrap { max-width: 1180px; margin: 0 auto; padding: 8px 32px 48px; display: grid; grid-template-columns: 1fr 340px; gap: 28px; }
+  .a-hello h1 { font-size: 30px; letter-spacing: -.02em; margin: 14px 0 4px; }
+  .a-hello p { margin: 0 0 22px; color: #6f6a60; font-size: 16px; }
+  .a-ask { background: #fff4cf; border: 1px solid #f0dd9a; border-radius: 18px; padding: 18px 20px; margin-bottom: 26px; }
+  .a-ask .q { font-size: 17px; margin: 8px 0 14px; }
+  .btn { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 600; background: #fff; box-shadow: 0 0 0 1px #e2d9c6 inset; transition: transform 120ms, background-color 120ms; }
+  .btn:hover { background: #faf6ee; }
+  .btn:active { transform: scale(.97); }
+  .btn.go { background: #23211d; color: #fff; box-shadow: none; }
+  .btn.go:hover { background: #3a3832; }
+  .a-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8f8a7f; margin: 0 0 12px; font-weight: 700; }
+  .a-people { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .a-person { background: #fff; border-radius: 20px; padding: 18px; box-shadow: 0 1px 2px rgba(35,33,29,.06), 0 6px 20px rgba(35,33,29,.05); }
+  .a-person .who { font-weight: 700; font-size: 16px; }
+  .a-claude { margin-top: 14px; background: #f7f3ec; border-radius: 14px; padding: 14px; }
+  .a-claude .say { font-size: 16px; font-weight: 600; margin: 6px 0; }
+  .a-claude.stopped { background: #fdf0ec; }
+  .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e7f5ec; color: #217346; }
+  .tag.stop { background: #fde2dc; color: #a8382b; }
+  .tag.lock { background: #eef1fb; color: #2b4aa0; }
+  .a-side .box { background: #fff; border-radius: 20px; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(35,33,29,.06); }
+  .todo { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid #f1ebe0; cursor: pointer; user-select: none; }
+  .todo:last-child { border-bottom: 0; }
+  .add { color: #8f8a7f; padding: 10px 2px 2px; border: 0; background: none; font-weight: 600; }
+  .sticky { background: #fff7b8; border-radius: 4px 14px 14px 14px; padding: 14px 16px; transform: rotate(-1deg); box-shadow: 0 6px 14px rgba(120,100,20,.12); margin-bottom: 12px; font-weight: 600; }
+  .sticky.b { background: #ffd9c9; transform: rotate(1deg); }
+  .sent { display: flex; align-items: center; gap: 10px; font-weight: 600; color: #217346; font-size: 16px; }
+
+
+  /* =================== B · Board + Inbox (Trello-style reference) =================== */
+  #b { background: radial-gradient(1200px 600px at 85% -10%, #3c4fa8 0%, transparent 60%), linear-gradient(135deg, #0e6b62 0%, #1d4e89 65%, #33388a 100%); color: #23211d; }
+  .bb-top { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: rgba(10, 20, 40, .28); color: #fff; backdrop-filter: blur(4px); }
+  .bb-top h1 { margin: 0; font-size: 19px; font-weight: 700; }
+  .bb-top .ghost { border: 0; background: rgba(255,255,255,.16); color: #fff; padding: 7px 12px; border-radius: 9px; font-weight: 600; font-size: 13.5px; transition: background-color 120ms; }
+  .bb-top .ghost:hover { background: rgba(255,255,255,.28); }
+  .bb-top .share { border: 0; background: #fff; color: #1d4e89; padding: 7px 14px; border-radius: 9px; font-weight: 700; font-size: 13.5px; }
+  .bb-faces { display: flex; }
+  .bb-faces .av { border: 2px solid rgba(255,255,255,.9); margin-left: -8px; }
+  .bb-faces .av:first-child { margin-left: 0; }
+  .bb-lock { margin: 12px 20px 0; display: inline-flex; align-items: center; gap: 10px; background: #fff3c4; color: #6b5200; border-radius: 12px; padding: 8px 14px; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .bb-body { display: flex; gap: 12px; padding: 12px 20px 90px; align-items: flex-start; overflow-x: auto; height: calc(100vh - 44px - 60px - 50px); }
+  .bb-inbox { width: 300px; flex: none; background: #fbf6ee; border-radius: 16px; padding: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.18); max-height: 100%; overflow: auto; transform-origin: left center; transition: opacity 200ms cubic-bezier(.16,1,.3,1), transform 200ms cubic-bezier(.16,1,.3,1); }
+  .bb-inbox.hidden { display: none; }
+  .bb-inbox h2 { margin: 2px 4px 10px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .bb-quick { background: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 1px 2px rgba(0,0,0,.08); margin-bottom: 12px; }
+  .bb-quick input { width: 100%; border: 0; outline: none; font: inherit; background: transparent; }
+  .bb-quick .hint { font-size: 12.5px; color: #9a958a; margin-top: 6px; }
+  .bb-msg { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .bb-msg.ask { box-shadow: 0 0 0 2px #f0c74a inset; }
+  .bb-msg.stop { box-shadow: 0 0 0 2px #f2b3a6 inset; }
+  .bb-msg .who { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13.5px; margin-bottom: 6px; }
+  .bb-msg .who > span:last-child { font-weight: 400; color: #9a958a; font-size: 12.5px; margin-left: auto; }
+  .bb-msg .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .bb-msg .acts .btn { padding: 7px 11px; font-size: 13px; border-radius: 9px; }
+  .bb-list { width: 272px; flex: none; background: #f1f2f4; border-radius: 16px; padding: 8px; box-shadow: 0 1px 1px rgba(9,30,66,.25); max-height: 100%; display: flex; flex-direction: column; transition: box-shadow 120ms, background-color 120ms; }
+  .bb-list.over { background: #e4ebfb; box-shadow: 0 0 0 2px #4f7df0; }
+  .bb-list h3 { margin: 4px 8px 8px; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+  .bb-list h3 .more { margin-left: auto; color: #8f8a7f; border: 0; background: none; border-radius: 6px; padding: 0 6px; }
+  .bb-list .cards { overflow: auto; min-height: 8px; }
+  .bb-card { background: #fff; border-radius: 10px; padding: 9px 10px; margin: 0 2px 8px; box-shadow: 0 1px 1px rgba(9,30,66,.22); cursor: pointer; transition: box-shadow 150ms, transform 150ms; }
+  .bb-card:hover { box-shadow: 0 0 0 2px #4f7df0; }
+  .bb-card.dragging { transform: rotate(3deg); box-shadow: 0 12px 24px rgba(9,30,66,.3); }
+  .bb-labels { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+  .bb-label { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 4px; color: #fff; }
+  .bb-card .title { font-weight: 500; }
+  .bb-badges { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12.5px; color: #6f6a60; }
+  .bb-badges .faces { margin-left: auto; display: flex; }
+  .bb-badges .faces .av { margin-left: -6px; border: 2px solid #fff; }
+  .bb-badge-ok { background: #e7f5ec; color: #217346; border-radius: 5px; padding: 0 6px; font-weight: 600; }
+  .bb-live { border-left: 4px solid #2e9d5b; }
+  .bb-stopped { border-left: 4px solid #e07a5f; }
+  .bb-progress { height: 5px; background: #eee9df; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bb-progress i { display: block; height: 100%; background: #2e9d5b; border-radius: 3px; transition: width 250ms cubic-bezier(.16,1,.3,1); }
+  .bb-sticky { background: #fff6a8; }
+  .bb-add { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 10px; color: #5e5b54; font-weight: 600; margin-top: 2px; }
+  .bb-add:hover { background: #e2e4e9; }
+  .bb-notes { display: none; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; padding: 16px 20px 90px; }
+  .bb-notes.on { display: grid; }
+  .bb-note { background: #fff; border-radius: 14px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  .bb-note b { display: block; margin-bottom: 4px; }
+  .bb-switch { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 4px; background: #fff; border-radius: 14px; padding: 5px; box-shadow: 0 8px 28px rgba(0,0,0,.28); z-index: 20; }
+  .bb-switch button { border: 0; background: none; padding: 8px 16px; border-radius: 10px; font-weight: 600; color: #5e5b54; display: flex; gap: 6px; align-items: center; }
+  .bb-switch button.on { background: #e4ebfb; color: #1d4e89; }
+  .bb-back { position: fixed; inset: 0; background: rgba(10,15,30,.45); display: none; place-items: start center; padding: 6vh 0; overflow: auto; z-index: 60; }
+  .bb-back.on { display: grid; animation: fade 180ms; }
+  .bb-cardback { width: 820px; background: #fff; border-radius: 18px; box-shadow: 0 24px 70px rgba(0,0,0,.35); display: grid; grid-template-columns: 1fr 300px; overflow: hidden; animation: pop 240ms cubic-bezier(.16,1,.3,1); }
+  .bb-cardback .main { padding: 22px 24px; }
+  .bb-cardback .side { background: #f7f5f1; padding: 22px 18px; border-left: 1px solid #eee8dc; }
+  .bb-cardback h3 { margin: 6px 0 14px; font-size: 22px; letter-spacing: -.01em; }
+  .bb-cardback h4 { margin: 18px 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .bb-stopbox { background: #fdf0ec; border-radius: 14px; padding: 14px; }
+  .bb-check { display: flex; align-items: center; gap: 10px; padding: 7px 4px; cursor: pointer; border-radius: 8px; }
+  .bb-check:hover { background: #f6f3ee; }
+  .bb-check.done .t { text-decoration: line-through; color: #9a958a; }
+  .bb-check.done .check { background: #2e9d5b; border-color: #2e9d5b; }
+  .bb-check.done .check svg { opacity: 1; transform: scale(1); }
+  .bb-comment { display: flex; gap: 10px; margin-bottom: 12px; font-size: 14px; }
+  .bb-comment .bubble { background: #fff; border-radius: 10px; padding: 8px 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .bb-x { position: absolute; margin: 12px; right: calc(50% - 410px); border: 0; background: rgba(0,0,0,.06); border-radius: 9px; width: 32px; height: 32px; font-size: 16px; }
+  /* =================== C · Team chat =================== */
+  #c { background: #fff; }
+  .c-wrap { display: grid; grid-template-columns: 240px 1fr 320px; height: calc(100vh - 44px); }
+  .c-left { background: #f6f4f0; border-right: 1px solid #ebe6dc; padding: 16px 12px; overflow: auto; }
+  .c-left h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #8f8a7f; margin: 18px 8px 8px; }
+  .c-proj { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; font-weight: 600; }
+  .c-proj.on { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .c-proj .ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+  .c-member { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; }
+  .c-member .st { font-size: 12.5px; color: #8f8a7f; }
+  .c-mid { display: flex; flex-direction: column; min-height: 0; }
+  .c-head { padding: 16px 24px; border-bottom: 1px solid #f0ece4; }
+  .c-head h1 { margin: 0; font-size: 19px; }
+  .c-feed { flex: 1; overflow: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .c-msg { display: flex; gap: 12px; max-width: 720px; animation: fade 220ms cubic-bezier(.16,1,.3,1); }
+  .c-msg .bubble { background: #f4f2ee; border-radius: 4px 16px 16px 16px; padding: 10px 14px; }
+  .c-msg .name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .c-msg .name span { font-weight: 400; color: #9a958a; font-size: 12.5px; }
+  .c-msg.me { align-self: flex-end; flex-direction: row-reverse; }
+  .c-msg.me .bubble { background: #2b59c3; color: #fff; border-radius: 16px 4px 16px 16px; }
+  .c-note { align-self: center; background: #eef1fb; color: #2b4aa0; font-size: 13.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px; }
+  .c-note.warn { background: #fde2dc; color: #a8382b; }
+  .c-q { border: 2px solid #f0dd9a; background: #fffaea !important; }
+  .c-day { align-self: center; color: #9a958a; font-size: 12.5px; font-weight: 600; }
+  .c-compose { padding: 14px 24px 20px; display: flex; gap: 10px; }
+  .c-compose input { flex: 1; border: 1px solid #e2dccf; border-radius: 14px; padding: 12px 16px; font: inherit; outline: none; transition: border-color 120ms, box-shadow 120ms; }
+  .c-compose input:focus { border-color: #2b59c3; box-shadow: 0 0 0 4px rgba(43,89,195,.12); }
+  .c-right { border-left: 1px solid #ebe6dc; padding: 18px; overflow: auto; background: #fcfbf9; }
+  .c-right h2 { font-size: 15px; margin: 0 0 10px; }
+  .c-pin { background: #fff; border: 1px solid #ece6da; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .c-pin .t { font-weight: 600; }
+</style>
+</head>
+<body>
+<nav class="switcher" aria-label="Design options">
+  <b>Baton · pick a look</b>
+  <button data-opt="a" aria-pressed="true">A · Team room</button>
+  <button data-opt="b" aria-pressed="false">B · Board + Inbox (Trello-style)</button>
+  <button data-opt="c" aria-pressed="false">C · Team chat</button>
+  <span class="hint">Same project, same features, three ways to show them. Everything here is clickable.</span>
+</nav>
+
+<!-- ============================ A ============================ -->
+<section class="option on" id="a">
+  <header class="a-top">
+    <div class="a-logo"><i></i>Baton</div>
+    <div class="a-project">Roll a Fish ▾</div>
+    <nav class="a-tabs"><button class="on">Home</button><button>To-do</button><button>Notes</button><button>Team</button></nav>
+    <div class="grow"></div>
+    <span class="av ceo">C</span>
+  </header>
+  <div class="a-wrap">
+    <main>
+      <div class="a-hello">
+        <h1>Good evening, ceo</h1>
+        <p>Boe's Claude is working on Roll a Fish right now. Yours stopped 20 minutes ago.</p>
+      </div>
+
+      <div class="a-ask" id="a-ask">
+        <div class="row"><span class="av sm boe">B<span class="ai">AI</span></span><b>Boe's Claude is asking you</b><span class="muted small">· 3 min ago</span></div>
+        <div class="q">"Are you still working on <b>Sell all</b>? If not, I can finish it while you're at training."</div>
+        <div class="row">
+          <button class="btn go" data-answer="Sent. Boe's Claude will finish Sell all.">Yes, take it over</button>
+          <button class="btn" data-answer="Sent. Boe's Claude will leave it to you.">No, I'm still on it</button>
+          <button class="btn">Write a reply…</button>
+        </div>
+      </div>
+
+      <h2 class="a-h2">What everyone is doing</h2>
+      <div class="a-people">
+        <article class="a-person">
+          <div class="row"><span class="av boe">B</span><div class="grow"><div class="who">Boe</div><div class="muted small"><span class="pulse"></span>&nbsp; Online</div></div></div>
+          <div class="a-claude">
+            <div class="row"><span class="av sm boe">B<span class="ai">AI</span></span><b class="small">Boe's Claude</b><span class="tag"><span class="pulse"></span> Working now</span></div>
+            <div class="say">Adding a "sell one fish" button that never sells favourites</div>
+            <div class="muted small">Next: test it with the starter fish</div>
+            <div style="margin-top:10px"><span class="tag lock">🔒 Please don't edit: the fish selling script</span></div>
+          </div>
+        </article>
+
+        <article class="a-person">
+          <div class="row"><span class="av ceo">C</span><div class="grow"><div class="who">ceo (you)</div><div class="muted small"><span class="pulse idle"></span>&nbsp; At training until 18:00</div></div></div>
+          <div class="a-claude stopped">
+            <div class="row"><span class="av sm ceo">C<span class="ai">AI</span></span><b class="small">Your Claude</b><span class="tag stop">Stopped · out of usage</span></div>
+            <div class="say">Was making "Sell all" skip favourite fish</div>
+            <div class="muted small">Got to step 2 of 3: the receipt is half written.</div>
+            <div class="row" style="margin-top:12px"><button class="btn go small">Ask Boe's Claude to continue</button><button class="btn small">See what it changed</button></div>
+          </div>
+        </article>
+
+        <article class="a-person">
+          <div class="row"><span class="av lucas">L</span><div class="grow"><div class="who">Lucas</div><div class="muted small"><span class="pulse off"></span>&nbsp; Last seen yesterday</div></div></div>
+          <div class="a-claude"><div class="muted">His Claude hasn't joined yet.</div></div>
+        </article>
+      </div>
+    </main>
+
+    <aside class="a-side">
+      <div class="box">
+        <h2 class="a-h2">To-do</h2>
+        <div class="todo"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow">Sell all skips favourite fish</span><span class="av sm boe">B<span class="ai">AI</span></span></div>
+        <div class="todo"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow">Show a receipt after selling</span><span class="av sm ceo">C<span class="ai">AI</span></span></div>
+        <div class="todo"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow">Arctic plots for the new world</span><span class="av sm ceo">C</span></div>
+        <div class="todo done"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow">Fix the chef animations</span><span class="av sm boe">B</span></div>
+        <button class="add">+ Add a to-do</button>
+      </div>
+      <div class="box">
+        <h2 class="a-h2">Important</h2>
+        <div class="sticky">Back up a script before changing it</div>
+        <div class="sticky b">Odds are locked: Legendary 0.5%. Ask ceo before changing</div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+
+<!-- ============================ B ============================ -->
+<section class="option" id="b">
+  <header class="bb-top">
+    <h1>Roll a Fish</h1>
+    <button class="ghost" title="Star">☆</button>
+    <div class="bb-faces"><span class="av sm ceo">C</span><span class="av sm boe">B</span><span class="av sm lucas">L</span></div>
+    <div class="grow"></div>
+    <button class="ghost">Filter</button>
+    <button class="share">Invite</button>
+  </header>
+  <div class="bb-lock">🔒 Boe's Claude is changing <b>the fish selling script</b> right now. Please don't edit it.</div>
+
+  <div class="bb-body" id="bb-board">
+    <aside class="bb-inbox" id="bb-inbox">
+      <h2>📥 Inbox <span class="muted small" style="font-weight:500">for you</span></h2>
+      <form class="bb-quick" id="bb-quick">
+        <input id="bb-quick-in" placeholder="Add a to-do, or ask a Claude…" />
+        <div class="hint">Enter adds it to "To do". Start with @boe to ask someone.</div>
+      </form>
+      <div class="bb-msg ask" id="bb-ask">
+        <div class="who"><span class="av sm boe">B<span class="ai">AI</span></span>Boe's Claude asks<span>3 min</span></div>
+        Are you still on <b>Sell all</b>? If not, I can finish it while you're at training.
+        <div class="acts"><button class="btn go" data-bb-answer="Boe's Claude will finish Sell all.">Yes, take it</button><button class="btn" data-bb-answer="Boe's Claude will leave it to you.">No, I'm on it</button></div>
+      </div>
+      <div class="bb-msg stop">
+        <div class="who"><span class="av sm ceo">C<span class="ai">AI</span></span>Your Claude stopped<span>20 min</span></div>
+        It ran out of usage halfway through <b>Sell all skips favourites</b> (step 2 of 3). Nothing is lost.
+        <div class="acts"><button class="btn" data-open-card>Open the card</button></div>
+      </div>
+      <div class="bb-msg">
+        <div class="who"><span class="av sm boe">B</span>Boe<span>1 h</span></div>
+        Arctic plots look great, keep the ice texture 👍
+      </div>
+    </aside>
+
+    <div class="bb-list" data-list="now">
+      <h3><span class="pulse"></span> Working now <button class="more">⋯</button></h3>
+      <div class="cards">
+        <div class="bb-card bb-live">
+          <div class="row"><span class="av sm boe">B<span class="ai">AI</span></span><b class="small">Boe's Claude</b><span class="muted small" style="margin-left:auto">now</span></div>
+          <div class="title" style="margin-top:6px">Adding a "sell one fish" button that never sells favourites</div>
+          <div class="bb-badges">Next: test it with the starter fish</div>
+        </div>
+        <div class="bb-card bb-stopped" data-open-card>
+          <div class="row"><span class="av sm ceo">C<span class="ai">AI</span></span><b class="small">Your Claude</b><span class="muted small" style="margin-left:auto">stopped</span></div>
+          <div class="title" style="margin-top:6px">Sell all skips favourite fish</div>
+          <div class="bb-progress"><i style="width:45%"></i></div>
+          <div class="bb-badges">Step 2 of 3 · out of usage</div>
+        </div>
+        <div class="bb-card">
+          <div class="row"><span class="av sm ceo">C</span><b class="small">ceo</b></div>
+          <div class="title" style="margin-top:6px">At training until 18:00</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bb-list" data-list="todo">
+      <h3>To do <button class="more">⋯</button></h3>
+      <div class="cards" id="bb-todo">
+        <div class="bb-card" draggable="true">
+          <div class="bb-labels"><span class="bb-label" style="background:#d98e04">Selling</span></div>
+          <div class="title">Show a receipt after selling</div>
+          <div class="bb-badges"><span>☑ 0/2</span><span class="faces"><span class="av sm ceo">C<span class="ai">AI</span></span></span></div>
+        </div>
+        <div class="bb-card" draggable="true">
+          <div class="bb-labels"><span class="bb-label" style="background:#2f80c9">Arctic</span></div>
+          <div class="title">Arctic plots for the new world</div>
+          <div class="bb-badges"><span>💬 2</span><span class="faces"><span class="av sm ceo">C</span></span></div>
+        </div>
+      </div>
+      <button class="bb-add">+ Add a card</button>
+    </div>
+
+    <div class="bb-list" data-list="doing">
+      <h3>Doing <button class="more">⋯</button></h3>
+      <div class="cards">
+        <div class="bb-card" draggable="true" data-open-card>
+          <div class="bb-labels"><span class="bb-label" style="background:#d98e04">Selling</span></div>
+          <div class="title">Sell all skips favourite fish</div>
+          <div class="bb-badges"><span id="bb-mini">☑ 1/3</span><span>💬 1</span><span class="faces"><span class="av sm ceo">C<span class="ai">AI</span></span><span class="av sm boe">B<span class="ai">AI</span></span></span></div>
+        </div>
+      </div>
+      <button class="bb-add">+ Add a card</button>
+    </div>
+
+    <div class="bb-list" data-list="done">
+      <h3>Done <button class="more">⋯</button></h3>
+      <div class="cards">
+        <div class="bb-card" draggable="true">
+          <div class="title">Fix the chef animations</div>
+          <div class="bb-badges"><span class="bb-badge-ok">✓ Done yesterday</span><span class="faces"><span class="av sm boe">B</span></span></div>
+        </div>
+      </div>
+      <button class="bb-add">+ Add a card</button>
+    </div>
+
+    <div class="bb-list" data-list="important">
+      <h3>📌 Important <button class="more">⋯</button></h3>
+      <div class="cards">
+        <div class="bb-card bb-sticky"><div class="title">Back up a script before changing it</div></div>
+        <div class="bb-card bb-sticky"><div class="title">Odds are locked: Legendary 0.5%</div><div class="bb-badges">Ask ceo before changing</div></div>
+      </div>
+      <button class="bb-add">+ Add a note</button>
+    </div>
+  </div>
+
+  <div class="bb-notes" id="bb-notes">
+    <div class="bb-note"><b>📄 How selling works</b><span class="muted small">Prices, Sell all, the Finn shop. Updated by Boe's Claude, 1 h ago</span></div>
+    <div class="bb-note"><b>📄 World travel</b><span class="muted small">City is free, Arctic costs $500K. Updated by ceo, 3 weeks ago</span></div>
+    <div class="bb-note"><b>📄 The catch cutscene</b><span class="muted small">Plays for Legendary and better. Updated by your Claude</span></div>
+    <div class="bb-note"><b>📄 Fish list</b><span class="muted small">38 fish across the city and the arctic</span></div>
+    <div class="bb-note"><b>🧠 Shared skill: stud building</b><span class="muted small">How we build stud-style models. Every Claude in the team has it.</span></div>
+  </div>
+
+  <nav class="bb-switch" aria-label="Views">
+    <button class="on" data-bb-view="inbox">📥 Inbox</button>
+    <button class="on" data-bb-view="board">🗂 Board</button>
+    <button data-bb-view="notes">📄 Notes</button>
+  </nav>
+
+  <div class="bb-back" id="bb-back">
+    <div class="bb-cardback" role="dialog" aria-label="Card">
+      <div class="main">
+        <div class="muted small">in list <b>Doing</b></div>
+        <h3>Sell all skips favourite fish</h3>
+        <div class="row" style="gap:18px;flex-wrap:wrap">
+          <div><div class="muted small" style="margin-bottom:4px">Who</div><div class="row" style="gap:4px"><span class="av sm ceo">C<span class="ai">AI</span></span><span class="av sm boe">B<span class="ai">AI</span></span></div></div>
+          <div><div class="muted small" style="margin-bottom:4px">Label</div><span class="bb-label" style="background:#d98e04">Selling</span></div>
+        </div>
+        <h4>✋ Where it stopped</h4>
+        <div class="bb-stopbox">
+          <b>Your Claude ran out of usage 20 minutes ago.</b>
+          <div class="muted" style="margin:6px 0 10px">Its last words: "Step 1 is done, favourites are skipped. The receipt is half written."</div>
+          <div class="row"><button class="btn go" id="bb-hand">Hand it to Boe's Claude</button><button class="btn">Wait for mine</button></div>
+        </div>
+        <h4>☑ Checklist <span class="muted small" id="bb-count" style="font-weight:500">1 of 3</span></h4>
+        <div class="bb-progress" style="margin:0 0 6px"><i id="bb-bar" style="width:33%"></i></div>
+        <div class="bb-check done"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t">Skip favourite fish</span></div>
+        <div class="bb-check"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t">Show a receipt (how many sold, how many kept)</span></div>
+        <div class="bb-check"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t">Add a "sell one fish" button</span></div>
+        <h4>📝 Description</h4>
+        <div class="muted">Players lost their Secret fish because Sell all sold everything. Favourites must stay in the inventory.</div>
+      </div>
+      <div class="side">
+        <h4 style="margin-top:0">💬 Comments</h4>
+        <form id="bb-cform" style="margin-bottom:14px"><input id="bb-cin" placeholder="Write a comment…" style="width:100%;border:1px solid #e2dccf;border-radius:10px;padding:9px 11px;font:inherit;outline:none" /></form>
+        <div id="bb-comments">
+          <div class="bb-comment"><span class="av sm ceo">C</span><div><b class="small">ceo</b> <span class="muted small">40 min</span><div class="bubble">Keep favourites in the inventory and count them on the receipt as kept.</div></div></div>
+          <div class="bb-comment"><span class="av sm ceo">C<span class="ai">AI</span></span><div><b class="small">Your Claude</b> <span class="muted small">35 min</span><div class="bubble">Done with step 1. Starting the receipt.</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ C ============================ -->
+<section class="option" id="c">
+  <div class="c-wrap">
+    <aside class="c-left">
+      <div class="c-proj on"><span class="ic" style="background:#2b59c3">R</span>Roll a Fish</div>
+      <div class="c-proj"><span class="ic" style="background:#b5541e">U</span>USAF V4</div>
+      <h3>Team</h3>
+      <div class="c-member"><span class="av sm boe">B<span class="ai">AI</span></span><div><div class="small"><b>Boe's Claude</b></div><div class="st"><span class="pulse"></span> working</div></div></div>
+      <div class="c-member"><span class="av sm boe">B</span><div><div class="small"><b>Boe</b></div><div class="st">online</div></div></div>
+      <div class="c-member"><span class="av sm ceo">C<span class="ai">AI</span></span><div><div class="small"><b>Your Claude</b></div><div class="st">stopped · out of usage</div></div></div>
+      <div class="c-member"><span class="av sm ceo">C</span><div><div class="small"><b>You</b></div><div class="st">at training</div></div></div>
+      <div class="c-member"><span class="av sm lucas">L</span><div><div class="small"><b>Lucas</b></div><div class="st">yesterday</div></div></div>
+    </aside>
+
+    <main class="c-mid">
+      <div class="c-head"><h1>Roll a Fish</h1><div class="muted small">Everything the team and their Claudes are doing, in one conversation</div></div>
+      <div class="c-feed" id="c-feed">
+        <div class="c-day">Today</div>
+        <div class="c-msg"><span class="av ceo">C<span class="ai">AI</span></span><div><div class="name">Your Claude <span>17:02</span></div><div class="bubble">Starting on "Sell all should skip favourite fish". I'll do it in 3 steps.</div></div></div>
+        <div class="c-msg"><span class="av ceo">C<span class="ai">AI</span></span><div><div class="name">Your Claude <span>17:31</span></div><div class="bubble">Step 1 done: favourites are skipped now. Working on the receipt.</div></div></div>
+        <div class="c-note warn">⏸ Your Claude stopped (out of usage) at step 2 of 3</div>
+        <div class="c-msg me"><span class="av ceo">C</span><div><div class="name" style="justify-content:flex-end">You <span>17:40</span></div><div class="bubble">Off to training, back at 18:00 👋</div></div></div>
+        <div class="c-msg"><span class="av boe">B<span class="ai">AI</span></span><div><div class="name">Boe's Claude <span>17:52</span></div><div class="bubble c-q">Are you still working on Sell all? If not, I can finish it while you're out.
+          <div class="row" style="margin-top:10px"><button class="btn go small" data-c-answer="Yes, take it over">Yes, take it over</button><button class="btn small" data-c-answer="No, I'll finish it">No, I'm on it</button></div></div></div></div>
+        <div class="c-note">🔒 Boe's Claude is changing the fish selling script. Please don't edit it.</div>
+        <div class="c-msg"><span class="av boe">B<span class="ai">AI</span></span><div><div class="name">Boe's Claude <span>17:55</span></div><div class="bubble">Meanwhile I'm adding a "sell one fish" button that never sells favourites.</div></div></div>
+      </div>
+      <form class="c-compose" id="c-form"><input id="c-input" placeholder="Write to the team or a Claude… (type @ to pick someone)" /><button class="btn go">Send</button></form>
+    </main>
+
+    <aside class="c-right">
+      <h2>To-do</h2>
+      <div class="todo"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow small">Sell all skips favourite fish</span></div>
+      <div class="todo"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow small">Show a receipt after selling</span></div>
+      <div class="todo"><span class="check"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t grow small">Arctic plots for the new world</span></div>
+      <button class="add">+ Add a to-do</button>
+      <h2 style="margin-top:22px">📌 Pinned</h2>
+      <div class="c-pin"><div class="t">Back up a script before changing it</div></div>
+      <div class="c-pin"><div class="t">Odds are locked</div><div class="muted small">Legendary 0.5%. Ask ceo before changing</div></div>
+      <div class="c-pin"><div class="t">📄 How selling works</div><div class="muted small">Prices, Sell all, the Finn shop</div></div>
+    </aside>
+  </div>
+</section>
+
+<script>
+  // option switcher
+  document.querySelectorAll('.switcher [data-opt]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.switcher [data-opt]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll('.option').forEach((o) => o.classList.toggle('on', o.id === b.dataset.opt));
+  }));
+  // to-do checkboxes
+  document.querySelectorAll('.todo').forEach((t) => t.addEventListener('click', () => t.classList.toggle('done')));
+  // A: answer the question in one click, then a clear "sent" ending
+  document.querySelectorAll('[data-answer]').forEach((b) => b.addEventListener('click', () => {
+    document.getElementById('a-ask').innerHTML = `<div class="sent"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#217346" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>${b.dataset.answer}</div>`;
+  }));
+  // A tabs (visual only)
+  document.querySelectorAll('.a-tabs button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.a-tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+
+  // B: Trello-style board + inbox
+  (() => {
+    const inbox = document.getElementById('bb-inbox');
+    const board = document.getElementById('bb-board');
+    const notes = document.getElementById('bb-notes');
+    document.querySelectorAll('[data-bb-view]').forEach((b) => b.addEventListener('click', () => {
+      const v = b.dataset.bbView;
+      if (v === 'inbox') { b.classList.toggle('on'); inbox.classList.toggle('hidden', !b.classList.contains('on')); return; }
+      document.querySelector('[data-bb-view="board"]').classList.toggle('on', v === 'board');
+      document.querySelector('[data-bb-view="notes"]').classList.toggle('on', v === 'notes');
+      board.style.display = v === 'board' ? '' : 'none';
+      notes.classList.toggle('on', v === 'notes');
+    }));
+    // quick add → new card in To do
+    document.getElementById('bb-quick').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const i = document.getElementById('bb-quick-in');
+      if (!i.value.trim()) return;
+      const card = document.createElement('div');
+      card.className = 'bb-card'; card.draggable = true;
+      card.innerHTML = '<div class="title"></div><div class="bb-badges"><span class="muted">just added</span></div>';
+      card.querySelector('.title').textContent = i.value.trim();
+      card.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.16,1,.3,1)' });
+      document.getElementById('bb-todo').prepend(card);
+      wireDrag(card);
+      i.value = '';
+    });
+    // answer from the inbox
+    document.querySelectorAll('[data-bb-answer]').forEach((b) => b.addEventListener('click', () => {
+      document.getElementById('bb-ask').innerHTML = `<div class="sent" style="font-size:14px"><svg width="18" height="18" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#217346" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Sent. ${b.dataset.bbAnswer}</div>`;
+    }));
+    // card back
+    const back = document.getElementById('bb-back');
+    document.querySelectorAll('[data-open-card]').forEach((c) => c.addEventListener('click', () => back.classList.add('on')));
+    back.addEventListener('click', (e) => { if (e.target === back) back.classList.remove('on'); });
+    addEventListener('keydown', (e) => e.key === 'Escape' && back.classList.remove('on'));
+    const checks = [...document.querySelectorAll('.bb-check')];
+    const sync = () => {
+      const n = checks.filter((c) => c.classList.contains('done')).length;
+      document.getElementById('bb-count').textContent = `${n} of ${checks.length}`;
+      document.getElementById('bb-bar').style.width = `${Math.round((n / checks.length) * 100)}%`;
+      document.getElementById('bb-mini').textContent = `☑ ${n}/${checks.length}`;
+    };
+    checks.forEach((c) => c.addEventListener('click', () => { c.classList.toggle('done'); sync(); }));
+    document.getElementById('bb-hand').addEventListener('click', (e) => {
+      e.target.closest('.bb-stopbox').innerHTML = '<div class="sent" style="font-size:15px"><svg width="18" height="18" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" stroke="#217346" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handed over. Boe\'s Claude picks up at step 2 with everything yours left.</div>';
+    });
+    document.getElementById('bb-cform').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const i = document.getElementById('bb-cin');
+      if (!i.value.trim()) return;
+      const el = document.createElement('div');
+      el.className = 'bb-comment';
+      el.innerHTML = '<span class="av sm ceo">C</span><div><b class="small">ceo</b> <span class="muted small">now</span><div class="bubble"></div></div>';
+      el.querySelector('.bubble').textContent = i.value.trim();
+      document.getElementById('bb-comments').prepend(el);
+      i.value = '';
+    });
+    // drag cards between lists (tilted while dragging)
+    let dragged = null;
+    function wireDrag(card) {
+      card.addEventListener('dragstart', () => { dragged = card; setTimeout(() => card.classList.add('dragging'), 0); });
+      card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragged = null; document.querySelectorAll('.bb-list').forEach((l) => l.classList.remove('over')); });
+    }
+    document.querySelectorAll('.bb-card[draggable="true"]').forEach(wireDrag);
+    document.querySelectorAll('.bb-list').forEach((list) => {
+      if (list.dataset.list === 'now' || list.dataset.list === 'important') return;
+      list.addEventListener('dragover', (e) => { e.preventDefault(); list.classList.add('over'); });
+      list.addEventListener('dragleave', () => list.classList.remove('over'));
+      list.addEventListener('drop', (e) => { e.preventDefault(); list.classList.remove('over'); if (dragged) list.querySelector('.cards').appendChild(dragged); });
+    });
+  })();
+  // C: chat
+  const feed = document.getElementById('c-feed');
+  const say = (text) => {
+    const now = new Date().toTimeString().slice(0, 5);
+    feed.insertAdjacentHTML('beforeend', `<div class="c-msg me"><span class="av ceo">C</span><div><div class="name" style="justify-content:flex-end">You <span>${now}</span></div><div class="bubble"></div></div></div>`);
+    feed.lastElementChild.querySelector('.bubble').textContent = text;
+    feed.scrollTop = feed.scrollHeight;
+  };
+  document.getElementById('c-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const i = document.getElementById('c-input');
+    if (i.value.trim()) { say(i.value.trim()); i.value = ''; }
+  });
+  document.querySelectorAll('[data-c-answer]').forEach((b) => b.addEventListener('click', () => {
+    b.parentElement.innerHTML = `<span class="muted small">You answered: ${b.dataset.cAnswer}</span>`;
+    say(b.dataset.cAnswer);
+  }));
+</script>
+</body>
+</html>

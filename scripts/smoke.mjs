@@ -154,5 +154,36 @@ check('admin can force a lock', !r.isError, r.text);
 r = await b.call('baton_task', { action: 'update', id: 'T-1', status: 'done' });
 check('task moved', r.text.includes('Moved T-1 to done'), r.text);
 
+// ---- desktop app endpoints
+const P = `/api/projects/${slug}`;
+const ov = await rest('GET', `${P}/overview`, ceo.key);
+check('app: overview', ov.status === 200 && ov.data.role === 'owner' && ov.data.live.some((c) => c.isAgent && c.doing), JSON.stringify(ov.data).slice(0, 300));
+const tree = await rest('GET', `${P}/tree`, lucas.key);
+check('app: tree has no bodies', tree.status === 200 && tree.data.some((t) => t.path === 'Systems/FishSeller') && !('body' in tree.data[0]), JSON.stringify(tree.data).slice(0, 200));
+const pg = await rest('GET', `${P}/page?path=${encodeURIComponent('Systems/FishSeller')}`, vic.key);
+check('app: a viewer can read a page in the app', pg.status === 200 && pg.data.comments.length === 1, JSON.stringify(pg.data).slice(0, 200));
+const vw = await rest('PUT', `${P}/page`, vic.key, { path: 'X/y', body: 'b', summary: 's' });
+check('app: a viewer cannot write', vw.status === 403, JSON.stringify(vw.data));
+const tk = await rest('POST', `${P}/tasks`, boe.key, { action: 'add', title: 'From the app' });
+check('app: admin adds a task', tk.status === 200 && tk.data.message.startsWith('Added'), JSON.stringify(tk.data));
+const ticket = (await rest('POST', `${P}/ticket`, lucas.key)).data.ticket;
+const got = await new Promise((resolve) => {
+  const ws = new WebSocket(`${SERVER.replace('http', 'ws')}${P}/live?ticket=${ticket}`);
+  ws.onopen = () => rest('POST', `${P}/comment`, lucas.key, { target: 'T-1', text: 'live?' });
+  ws.onmessage = (e) => { ws.close(); resolve(String(e.data)); };
+  ws.onerror = () => resolve('error');
+  setTimeout(() => resolve('timeout'), 4000);
+});
+check('app: live socket hears changes', got.includes('"changed"'), got);
+const reuse = await new Promise((resolve) => {
+  const ws = new WebSocket(`${SERVER.replace('http', 'ws')}${P}/live?ticket=${ticket}`);
+  ws.onopen = () => { ws.close(); resolve('opened'); };
+  ws.onerror = () => resolve('refused');
+  setTimeout(() => resolve('timeout'), 4000);
+});
+check('app: tickets work once', reuse === 'refused', reuse);
+const cors = await fetch(`${SERVER}${P}/overview`, { headers: { authorization: `Bearer ${ceo.key}`, origin: 'https://evil.example' } });
+check('app: other sites are refused', cors.status === 403, String(cors.status));
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

@@ -48,7 +48,11 @@ fn handle(event: &str, input: &Value) -> Option<()> {
 }
 
 fn post(agent: &ureq::Agent, server: &str, auth: &str, body: Value) {
-    let _ = agent.post(&format!("{server}/api/events")).set("authorization", auth).send_json(body);
+    let _ = agent
+        .post(&format!("{server}/api/events"))
+        .set("authorization", auth)
+        .set("content-type", "application/json")
+        .send_string(&body.to_string());
 }
 
 fn inject(event: &str, text: &str) {
