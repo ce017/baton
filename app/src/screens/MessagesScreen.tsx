@@ -120,8 +120,8 @@ export function MessagesScreen() {
           ) : thread.data?.length ? (
             <AnimatePresence initial={false}>
               {thread.data.map((m) => (
-                <motion.div key={m.seq} className="msg2" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE_OUT } }}>
-                  <Avatar label={m.from_label} bot={m.fromAgent} />
+                <motion.div key={m.seq} className={`msg2 ${m.mine && !m.fromAgent ? 'me' : ''}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE_OUT } }}>
+                  {!(m.mine && !m.fromAgent) && <Avatar label={m.from_label} bot={m.fromAgent} />}
                   <div style={{ minWidth: 0 }}>
                     <div className="who">
                       <b>{m.mine && !m.fromAgent ? 'You' : m.mine ? 'Your Claude' : m.from_label}</b>

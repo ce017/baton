@@ -1,18 +1,18 @@
 /* Baton — light pro-tool look. Colour marks status and people only; one accent for primary actions. */
 :root {
-  --bg: #f6f5f2;
-  --surface: #ffffff;
-  --sidebar: #efede8;
-  --frame: #e9e7e2;
-  --hover: #e8e5de;
-  --line: #e3e0d8;
-  --line-strong: #d3cfc4;
-  --ink: #1d1c1a;
-  --ink-2: #5e5b54;
-  --ink-3: #8d897f;
-  --accent: #2b59c3;
+  --bg: #ffffff;
+  --surface: #f8f8f8;
+  --sidebar: #f6f6f6;
+  --frame: #ececec;
+  --hover: #ededed;
+  --line: #e6e6e6;
+  --line-strong: #d6d6d6;
+  --ink: #171717;
+  --ink-2: #5f5f5f;
+  --ink-3: #8f8f8f;
+  --accent: #4f5bd5;
   --accent-ink: #ffffff;
-  --accent-soft: #e7edfa;
+  --accent-soft: #eceefc;
 
   --todo: #6f6b62;
   --todo-bg: #efede8;
@@ -408,3 +408,21 @@ svg.lucide { stroke-width: 1.6; }
 .avatar.sm .bot svg { width: 6px; height: 6px; }
 [data-theme='dark'] .leftoff { background: var(--surface); border-color: var(--line-strong); }
 [data-theme='dark'] .conv.on { background: var(--hover); }
+/* your own messages sit on the right in a soft bubble (Claude-app style) */
+.msg2.me { grid-template-columns: 1fr; justify-items: end; margin-left: auto; }
+.msg2.me > div { max-width: 70%; display: flex; flex-direction: column; align-items: flex-end; }
+.msg2.me .who b { display: none; }
+.msg2.me .tx { background: var(--hover); padding: 8px 12px; border-radius: 12px 12px 4px 12px; margin-top: 3px; }
+
+/* light theme: same calm system, white panel on a grey frame */
+[data-theme='light'] .avatar { background: #e4e4e4 !important; color: #2a2a2a; border-radius: 6px; }
+[data-theme='light'] .avatar.sm { border-radius: 4px; }
+[data-theme='light'] .avatar .bot { background: #171717; color: #fff; border-radius: 4px; }
+[data-theme='light'] .btn.primary { background: #171717; border-color: #171717; color: #fff; box-shadow: none; }
+[data-theme='light'] .btn.primary:hover { background: #2c2c2c; }
+[data-theme='light'] .btn:hover { background: #f1f1f1; border-color: #cfcfcf; }
+[data-theme='light'] .leftoff { background: var(--surface); }
+[data-theme='light'] .conv.on { background: var(--hover); }
+[data-theme='light'] .lbl { filter: saturate(0.6); }
+[data-theme='light'] .prose code, [data-theme='light'] .codeblock { background: #f2f2f2; }
+[data-theme='light'] .skel { background: #efefef; }
