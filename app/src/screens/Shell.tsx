@@ -9,6 +9,7 @@ import { Avatar, EASE_MOVE, Skel, useToast } from '../ui.tsx';
 import { BoardScreen } from './BoardScreen.tsx';
 import { MessagesScreen } from './MessagesScreen.tsx';
 import { Notifier } from './Notifier.tsx';
+import { Waker } from './Waker.tsx';
 import { PagesScreen } from './PagesScreen.tsx';
 import { PeopleScreen } from './PeopleScreen.tsx';
 
@@ -171,6 +172,7 @@ export function Shell() {
         ) : state ? (
           <ProjectCtx.Provider value={state}>
             <Notifier />
+            <Waker />
             {route.view === 'board' && <BoardScreen />}
             {route.view === 'notes' && <div className="pagewrap" style={{ display: 'flex', flexDirection: 'column' }}><PagesScreen /></div>}
             {route.view === 'messages' && <MessagesScreen />}

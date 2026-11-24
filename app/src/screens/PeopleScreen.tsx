@@ -6,6 +6,7 @@ import { call, isTauri, type Role, tauriInvoke, type TreeItem } from '../lib/api
 import { Avatar, DrawCheck, Skel, useToast } from '../ui.tsx';
 import { JobsSection } from './JobsSection.tsx';
 import { NotifySettings } from './Notifier.tsx';
+import { WakeSettings } from './Waker.tsx';
 import { CreateProject, useProject, useProjectQuery } from './Shell.tsx';
 
 const ROLE_HELP: Record<Role, string> = {
@@ -36,6 +37,7 @@ export function PeopleScreen(_: { onCreateProject: () => void }) {
         {cfg.agentKey && <JobsSection />}
         {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
         <Skills />
+        <WakeSettings />
         <NotifySettings />
       </div>
     </div>

@@ -204,11 +204,19 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
     if (what === 'members' && method === 'GET') return json(await obj.members(actor));
+    if (what === 'wakes' && method === 'GET') return json(await obj.wakes(actor));
+    if (what === 'wake' && method === 'POST') return json(await obj.wake(actor, await body<{ to: string; text: string; task?: string }>(req)));
+    if (what === 'wake-opt' && method === 'POST') return json(await obj.setWakeOpt(actor, !!(await body<{ enabled: boolean }>(req)).enabled));
+    if (what === 'wake-claim' && method === 'POST') return json(await obj.claimWake(actor, String((await body<{ id: string }>(req)).id ?? '')));
+    if (what === 'wake-finish' && method === 'POST') {
+      const b = await body<{ id: string; status: 'done' | 'failed' | 'refused'; result: string }>(req);
+      return json(await obj.finishWake(actor, String(b.id ?? ''), b));
+    }
     if (what === 'notices' && method === 'GET') {
       const after = Number(url.searchParams.get('after') ?? -1);
       return json(await obj.notices(actor, Number.isFinite(after) ? after : -1));

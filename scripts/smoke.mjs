@@ -237,5 +237,34 @@ check('jobs: people only see their own jobs and chats', boeList.jobs?.length ===
   check('notices: reading them marks nothing read', again.messages.length === 1, JSON.stringify(again));
 }
 
+// ---- Wake: start a teammate's Claude on their PC
+{
+  const off = await rest('POST', `${P}/wake`, ceo.key, { to: boe.name, text: 'Continue T-1' });
+  check("wake: refused until they turn it on", off.status === 409, JSON.stringify(off.data));
+  const agentOpt = await rest('POST', `${P}/wake-opt`, boeA, { enabled: true });
+  check('wake: Claudes cannot turn Wake on', agentOpt.status === 403, JSON.stringify(agentOpt.data));
+  await rest('POST', `${P}/wake-opt`, boe.key, { enabled: true });
+  const allow = (await rest('GET', `${P}/wakes`, ceo.key)).data;
+  check('wake: others see who allows it', allow.allow?.includes(boe.name), JSON.stringify(allow));
+  const byAgent = await rest('POST', `${P}/wake`, ceoA, { to: boe.name, text: 'x' });
+  check('wake: Claudes cannot wake others', byAgent.status === 403, JSON.stringify(byAgent.data));
+  const sent = await rest('POST', `${P}/wake`, ceo.key, { to: boe.name, text: 'Continue T-1 from where you stopped', task: 'T-1' });
+  check('wake: a person sends a wake', sent.status === 200 && sent.data.id?.startsWith('W-'), JSON.stringify(sent.data));
+  const twice = await rest('POST', `${P}/wake`, ceo.key, { to: boe.name, text: 'again' });
+  check('wake: one request at a time', twice.status === 409, JSON.stringify(twice.data));
+  const inbox = (await rest('GET', `${P}/wakes`, boe.key)).data;
+  check("wake: it waits for the target's PC", inbox.forMe?.[0]?.status === 'pending', JSON.stringify(inbox.forMe));
+  const steal = await rest('POST', `${P}/wake-claim`, lucas.key, { id: sent.data.id });
+  check('wake: only the target can take it', steal.status === 404, JSON.stringify(steal.data));
+  const claim = await rest('POST', `${P}/wake-claim`, boe.key, { id: sent.data.id });
+  const claim2 = await rest('POST', `${P}/wake-claim`, boe.key, { id: sent.data.id });
+  check('wake: claimed once', claim.status === 200 && claim2.status === 409, JSON.stringify([claim.data, claim2.data]));
+  await rest('POST', `${P}/wake-finish`, boe.key, { id: sent.data.id, status: 'done', result: 'Finished the spec for steps 1-3.' });
+  const after = (await rest('GET', `${P}/wakes`, ceo.key)).data;
+  check('wake: the sender sees the result', after.sent?.[0]?.status === 'done' && after.sent[0].result.includes('spec'), JSON.stringify(after.sent?.[0]));
+  const dm = (await rest('GET', `${P}/chat?with=${boe.name}`, ceo.key)).data;
+  check("wake: the result arrives as a message from their Claude", dm.some((m) => m.text.includes('Woke up for your request') && m.fromAgent !== undefined), JSON.stringify(dm.slice(-2)));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

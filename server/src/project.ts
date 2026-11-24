@@ -157,6 +157,9 @@ export class ProjectDO extends DurableObject<unknown> {
       this.sql.exec("ALTER TABLE messages ADD COLUMN from_user TEXT NOT NULL DEFAULT ''");
     } catch {}
     this.sql.exec('CREATE TABLE IF NOT EXISTS chat_reads(user_id TEXT NOT NULL, conv TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(user_id, conv))');
+    // Wake: requests to start a teammate's Claude headless on their PC, and who allows it.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS wakes(id TEXT PRIMARY KEY, from_user TEXT NOT NULL, from_label TEXT NOT NULL, to_user TEXT NOT NULL, to_name TEXT NOT NULL, task TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS wake_opt(user_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, updated_at INTEGER NOT NULL)');
     // Claude jobs: a person's named roles for their Claude chats, and which chat has which job.
     this.sql.exec('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, instructions TEXT NOT NULL, labels TEXT NOT NULL, updated_at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS chats(session TEXT PRIMARY KEY, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, job_id TEXT, title TEXT NOT NULL, cwd TEXT NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL)');
@@ -1000,6 +1003,94 @@ export class ProjectDO extends DurableObject<unknown> {
       .toArray()
       .map((m) => ({ ...m, text: clip(m.text, 200) }));
     return { top, messages };
+  }
+
+  // ---------------------------------------------------------------- Wake: start a teammate's Claude on their PC
+  /** A person asks a teammate's PC to start their Claude headless (only if that teammate turned Wake on). */
+  async wake(actor: Actor, a: { to: string; text: string; task?: string }) {
+    this.need(actor, 'member');
+    if (actor.agentId) throw new BatonError('Only people can wake a Claude.', 403);
+    const text = (a.text ?? '').trim();
+    if (!text) throw new BatonError('Say what the Claude should do.');
+    assertNoSecret(text, a.task);
+    const name = (a.to ?? '').trim().toLowerCase().replace(/'s\b.*$/, '');
+    const m = this.sql.exec<{ user_id: string; name: string; role: Role }>('SELECT user_id, name, role FROM members WHERE name = ?', name).toArray()[0];
+    if (!m) throw new BatonError(`No member called "${a.to}".`, 404);
+    if (m.role === 'viewer') throw new BatonError(`${m.name} is a viewer; their Claude can't work here.`, 403);
+    const opt = this.sql.exec<{ enabled: number }>('SELECT enabled FROM wake_opt WHERE user_id = ?', m.user_id).toArray()[0];
+    if (!opt?.enabled) throw new BatonError(`${m.name} hasn't turned on Wake on their PC.`, 409);
+    const busy = this.sql.exec<{ c: number }>("SELECT COUNT(*) AS c FROM wakes WHERE to_user = ? AND status IN ('pending', 'running')", m.user_id).toArray()[0]?.c ?? 0;
+    if (busy) throw new BatonError(`${m.name}'s Claude already has a wake request waiting or running.`, 409);
+    const id = `W-${crypto.randomUUID().slice(0, 6)}`;
+    this.sql.exec(
+      "INSERT INTO wakes(id, from_user, from_label, to_user, to_name, task, text, status, result, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)",
+      id, actor.userId, actorLabel(actor), m.user_id, m.name, clip(a.task ?? '', 20), clip(text, 1500), Date.now(), Date.now(),
+    );
+    this.log(actor, 'wake', `asked ${m.name}'s Claude to wake up: ${clip(text, 100)}`);
+    this.broadcast('wake');
+    return { id, message: `Asked ${m.name}'s PC to start their Claude. It starts when Baton is running there.` };
+  }
+
+  /** The person's own Wake switch (set by their desktop app). */
+  async setWakeOpt(actor: Actor, enabled: boolean) {
+    this.need(actor, 'member');
+    if (actor.agentId) throw new BatonError('People turn Wake on, not their Claudes.', 403);
+    this.sql.exec(
+      'INSERT INTO wake_opt(user_id, enabled, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at',
+      actor.userId, enabled ? 1 : 0, Date.now(),
+    );
+    if (!enabled) {
+      this.sql.exec("UPDATE wakes SET status = 'refused', result = 'Wake was turned off.', updated_at = ? WHERE to_user = ? AND status = 'pending'", Date.now(), actor.userId);
+    }
+    this.broadcast('wake');
+    return { enabled };
+  }
+
+  /** Requests I sent, requests waiting for my PC, and who allows Wake. */
+  async wakes(actor: Actor) {
+    this.need(actor, 'viewer');
+    type W = { id: string; from_label: string; to_name: string; task: string; text: string; status: string; result: string; created_at: number; updated_at: number };
+    const cols = 'id, from_label, to_name, task, text, status, result, created_at, updated_at';
+    const sent = this.sql.exec<W>(`SELECT ${cols} FROM wakes WHERE from_user = ? ORDER BY created_at DESC LIMIT 10`, actor.userId).toArray();
+    const forMe = this.sql
+      .exec<W>(`SELECT ${cols} FROM wakes WHERE to_user = ? AND (status IN ('pending', 'running') OR updated_at > ?) ORDER BY created_at DESC LIMIT 10`, actor.userId, Date.now() - 86_400_000)
+      .toArray();
+    const allow = this.sql
+      .exec<{ name: string }>('SELECT m.name FROM wake_opt w JOIN members m ON m.user_id = w.user_id WHERE w.enabled = 1')
+      .toArray()
+      .map((r) => r.name);
+    return { now: Date.now(), sent, forMe, allow };
+  }
+
+  /** The target's app takes a pending request before running it (only one PC runs it). */
+  async claimWake(actor: Actor, id: string) {
+    this.need(actor, 'member');
+    const row = this.sql.exec<{ to_user: string; status: string }>('SELECT to_user, status FROM wakes WHERE id = ?', id).toArray()[0];
+    if (!row || row.to_user !== actor.userId) throw new BatonError('No such wake request for you.', 404);
+    if (row.status !== 'pending') throw new BatonError('Already taken.', 409);
+    this.sql.exec("UPDATE wakes SET status = 'running', updated_at = ? WHERE id = ?", Date.now(), id);
+    this.broadcast('wake');
+    return { ok: true };
+  }
+
+  async finishWake(actor: Actor, id: string, a: { status: 'done' | 'failed' | 'refused'; result: string }) {
+    this.need(actor, 'member');
+    const row = this.sql.exec<{ to_user: string; from_user: string; from_label: string }>('SELECT to_user, from_user, from_label FROM wakes WHERE id = ?', id).toArray()[0];
+    if (!row || row.to_user !== actor.userId) throw new BatonError('No such wake request for you.', 404);
+    const status = ['done', 'failed', 'refused'].includes(a.status) ? a.status : 'failed';
+    const result = clip(String(a.result ?? '').trim(), 600);
+    assertNoSecret(result);
+    const now = Date.now();
+    this.sql.exec('UPDATE wakes SET status = ?, result = ?, updated_at = ? WHERE id = ?', status, result, now, id);
+    // Tell whoever asked, as a direct message from this person's Claude.
+    const label = `${actor.userName}'s Claude`;
+    const say = status === 'done' ? `Woke up for your request (${id}). ${result || 'Done.'}` : status === 'refused' ? `Couldn't wake up for ${id}: ${result || 'refused on this PC.'}` : `Woke up for ${id} but it failed: ${result || 'no details.'}`;
+    this.sql.exec(
+      'INSERT INTO messages(from_id, from_label, from_user, to_id, to_label, kind, text, ref, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      actor.agentId ?? `a_wake_${actor.userId}`, label, actor.userId, row.from_user, row.from_label, 'fyi', clip(say, 1500), id, now,
+    );
+    this.broadcast('wake');
+    return { ok: true };
   }
 
   async issueTicket(actor: Actor): Promise<string> {

@@ -8,6 +8,7 @@ import { call, canEdit, type FeedRow, type LiveCard, type Task, type TaskStatus 
 import { ago, ownerName, yourLabel, presence } from '../lib/format.ts';
 import { Avatar, EASE_IN, EASE_OUT, Skel, useToast } from '../ui.tsx';
 import { Comments } from './PagesScreen.tsx';
+import { WakeButton } from './Waker.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
 const COLS: { status: TaskStatus; label: string; dot: string }[] = [
@@ -317,6 +318,7 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
               {helpers.slice(0, 2).map((h) => <button key={h.id} type="button" className="btn primary" onClick={() => onHandOver(task, agent, h)}>Hand over to {h.label}</button>)}
             </div>
           )}
+          {editable && stopped && <WakeButton owner={ownerName(agent.label)} task={task} />}
         </div>
       )}
 

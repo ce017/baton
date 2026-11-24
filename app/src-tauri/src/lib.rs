@@ -302,6 +302,34 @@ fn install_skills(project: String, bundle: String) -> Result<String, String> {
     Ok(msg)
 }
 
+/// Wake: runs this PC's Claude headless for a teammate's request. The app only calls it when the
+/// person turned Wake on, within their daily limit. Read-only tools unless they allowed edits.
+#[tauri::command]
+async fn run_wake(folder: String, prompt: String, max_turns: u32, may_edit: bool) -> Result<String, String> {
+    let dir = PathBuf::from(&folder);
+    if folder.trim().is_empty() || !dir.is_dir() {
+        return Err(format!("The Wake folder \"{folder}\" doesn't exist on this PC."));
+    }
+    let tools = if may_edit { "Read,Glob,Grep,Edit,Write,MultiEdit,mcp__baton" } else { "Read,Glob,Grep,mcp__baton" };
+    let turns = max_turns.clamp(1, 100).to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = quiet("claude")
+            .current_dir(&dir)
+            .args(["-p", &prompt, "--max-turns", &turns, "--allowedTools", tools, "--output-format", "text"])
+            .output()
+            .map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() {
+            Ok(text)
+        } else {
+            let err = format!("{} {}", String::from_utf8_lossy(&out.stderr).trim(), text);
+            Err(err.trim().chars().take(400).collect())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// When on, closing the window hides Baton to the tray so notifications keep coming.
 static CLOSE_TO_TRAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -365,7 +393,8 @@ pub fn run() {
             connect_claude,
             disconnect_claude,
             install_skills,
-            set_close_to_tray
+            set_close_to_tray,
+            run_wake
         ])
         .run(tauri::generate_context!())
         .expect("error while running Baton");
