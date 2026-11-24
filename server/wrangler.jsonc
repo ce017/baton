@@ -11,5 +11,11 @@
     ]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DirectoryDO", "ProjectDO"] }],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // The same app as the desktop one, for invite links and quick access from any browser.
+  "assets": {
+    "directory": "../app/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/auth/*", "/health"]
+  }
 }

@@ -192,3 +192,49 @@ export function NotifySettings() {
     </>
   );
 }
+
+// ---------------------------------------------------------------- new versions
+declare const __APP_VERSION__: string;
+const REPO = 'ce017/baton';
+
+const newer = (a: string, b: string) => {
+  const pa = a.replace(/^v/, '').split('.').map(Number);
+  const pb = b.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+  return false;
+};
+
+/** Checks the GitHub releases for a newer Baton and says what's in it. */
+export function UpdateNotice() {
+  const [rel, setRel] = useState<{ tag: string; url: string; notes: string } | null>(null);
+  useEffect(() => {
+    const check = () =>
+      fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r: { tag_name: string; html_url: string; body: string | null } | null) => {
+          if (!r || !newer(r.tag_name, __APP_VERSION__)) return;
+          if (localStorage.getItem('baton.update.dismissed') === r.tag_name) return;
+          const notes = (r.body ?? '').split('\n').map((l) => l.replace(/^[-*#\s]+/, '').trim()).filter(Boolean).slice(0, 3).join(' · ');
+          setRel({ tag: r.tag_name, url: r.html_url, notes });
+          if (isTauri && !(document.visibilityState === 'visible' && document.hasFocus())) osNotify(`Baton ${r.tag_name} is out`, notes || 'A new version is ready to download.').catch(() => {});
+        })
+        .catch(() => {});
+    check();
+    const t = setInterval(check, 6 * 3_600_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!rel) return null;
+  return (
+    <motion.div className="updatebar" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE_OUT } }}>
+      <Bell size={14} />
+      <span className="grow truncate"><b>Baton {rel.tag} is out.</b> {rel.notes}</span>
+      <button type="button" className="btn primary sm" onClick={async () => {
+        if (isTauri) {
+          const { openUrl } = await import('@tauri-apps/plugin-opener');
+          await openUrl(rel.url);
+        } else window.open(rel.url, '_blank', 'noopener');
+      }}>See what's new</button>
+      <button type="button" className="btn ghost sm" onClick={() => { localStorage.setItem('baton.update.dismissed', rel.tag); setRel(null); }}>Later</button>
+    </motion.div>
+  );
+}

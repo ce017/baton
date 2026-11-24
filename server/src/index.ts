@@ -3,6 +3,7 @@ import type { DirectoryDO, Identity } from './directory.ts';
 import type { ProjectDO, TaskArgs, WriteArgs } from './project.ts';
 import { type Actor, BatonError, isRole, readError, sha256 } from './shared.ts';
 import { buildMcpServer } from './tools.ts';
+import { type AuthDeps, authRoutes, projectInviteRoutes } from './auth.ts';
 
 export { DirectoryDO } from './directory.ts';
 export { ProjectDO } from './project.ts';
@@ -12,6 +13,8 @@ interface Env {
   PROJECT: DurableObjectNamespace<ProjectDO>;
   /** Bootstrap secret for creating people (`wrangler secret put ADMIN_TOKEN`). */
   ADMIN_TOKEN?: string;
+  /** Google OAuth client id (public) for "Continue with Google". */
+  GOOGLE_CLIENT_ID?: string;
 }
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -94,12 +97,28 @@ async function route(req: Request, env: Env): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const method = req.method;
 
+  const deps: AuthDeps = {
+    dir: directory(env),
+    project: (id) => projectObj(env, id),
+    identify: (r) => identify(r, env),
+    body,
+    googleClientId: env.GOOGLE_CLIENT_ID,
+  };
+  // Google posts the sign-in back from its own site, so this one skips the origin check.
+  if (path === '/auth/google/callback' || path === '/auth/google') {
+    const r = await authRoutes(req, url, path, deps);
+    if (r) return r;
+  }
+
   // MCP clients send no Origin; browsers do. Only the desktop app (and local dev) may call from a page.
   const origin = req.headers.get('origin');
   if (origin && origin !== url.origin && !appOrigin(origin)) {
     return json({ error: 'Cross-origin requests are not allowed.' }, 403);
   }
   if (method === 'OPTIONS') return new Response(null, { status: 204 });
+
+  const auth = await authRoutes(req, url, path, deps);
+  if (auth) return auth;
 
   if (path === '/') return text('Baton server. Connect a Claude at /mcp with an agent key.');
   if (path === '/health') return json({ ok: true });
@@ -144,6 +163,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       agent: who.agentName ?? null,
       defaultProject: who.defaultProject ?? null,
       projects: await dir.projectsOf(who.userId),
+      emails: who.agentId ? undefined : await dir.emailsOf(who.userId),
       agents: who.agentId ? undefined : await dir.agentsOf(who.userId),
     });
   }
@@ -204,10 +224,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
+    const inv = await projectInviteRoutes(req, url, what, who, ref, deps);
+    if (inv) return inv;
     if (what === 'members' && method === 'GET') return json(await obj.members(actor));
     if (what === 'wakes' && method === 'GET') return json(await obj.wakes(actor));
     if (what === 'wake' && method === 'POST') return json(await obj.wake(actor, await body<{ to: string; text: string; task?: string }>(req)));

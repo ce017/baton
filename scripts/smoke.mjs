@@ -266,5 +266,44 @@ check('jobs: people only see their own jobs and chats', boeList.jobs?.length ===
   check("wake: the result arrives as a message from their Claude", dm.some((m) => m.text.includes('Woke up for your request') && m.fromAgent !== undefined), JSON.stringify(dm.slice(-2)));
 }
 
+// ---- easy joining: invite links, sign-in links, email adds
+{
+  const memberMake = await rest('POST', `${P}/invites`, lucas.key, { role: 'member' });
+  check('invites: members cannot make invite links', memberMake.status === 403, JSON.stringify(memberMake.data));
+  const adminAsAdmin = await rest('POST', `${P}/invites`, boe.key, { role: 'admin' });
+  check('invites: only the owner invites admins', adminAsAdmin.status === 403, JSON.stringify(adminAsAdmin.data));
+  const made = await rest('POST', `${P}/invites`, ceo.key, { role: 'member', uses: 2, days: 1 });
+  const token = made.data.token;
+  check('invites: owner makes a 2-use link', made.status === 200 && made.data.url?.endsWith(`/join/${token}`), JSON.stringify(made.data));
+  const peek = await fetch(`${SERVER}/api/invites/${token}`).then((r) => r.json());
+  check('invites: anyone can see what a link is for', peek.project?.slug === slug && peek.role === 'member' && peek.usesLeft === 2, JSON.stringify(peek));
+  const j1 = await fetch(`${SERVER}/api/invites/${token}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `Newbie ${tag}` }) }).then((r) => r.json());
+  check('invites: joining with a name makes an account', !!j1.key && j1.project === slug && j1.role === 'member', JSON.stringify(j1));
+  const newbieMe = (await rest('GET', '/api/me', j1.key)).data;
+  check('invites: the new person is in the project', newbieMe.projects?.some((p) => p.slug === slug), JSON.stringify(newbieMe));
+  const j2 = await rest('POST', `/api/invites/${token}/join`, vic.key, {});
+  check('invites: a signed-in person joins with their own account', j2.status === 200 && j2.data.key === undefined, JSON.stringify(j2.data));
+  const j3 = await fetch(`${SERVER}/api/invites/${token}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"late"}' });
+  check('invites: used-up links stop working', j3.status === 410, String(j3.status));
+  const viaAgent = await rest('POST', `/api/invites/${token}/join`, ceoA, {});
+  check('invites: Claude keys cannot join', viaAgent.status === 403 || viaAgent.status === 410, JSON.stringify(viaAgent.data));
+  const made2 = await rest('POST', `${P}/invites`, ceo.key, { role: 'viewer', uses: 5 });
+  await rest('POST', `${P}/invite-revoke`, ceo.key, { id: made2.data.id });
+  const dead = await fetch(`${SERVER}/api/invites/${made2.data.token}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"x"}' });
+  check('invites: turned-off links stop working', dead.status === 410, String(dead.status));
+  const link = await rest('POST', '/api/login-links', ceo.key, {});
+  const ltoken = link.data.url?.split('/signin/')[1];
+  const ses = await fetch(`${SERVER}/api/login-links/${ltoken}`, { method: 'POST' }).then((r) => r.json());
+  const sesMe = (await rest('GET', '/api/me', ses.key)).data;
+  check('sign-in links: a one-use link signs in on another device', sesMe.user === ceo.name, JSON.stringify(sesMe));
+  const again = await fetch(`${SERVER}/api/login-links/${ltoken}`, { method: 'POST' });
+  check('sign-in links: they work once', again.status === 410, String(again.status));
+  const byEmail = await rest('POST', `${P}/email-invites`, ceo.key, { email: `someone.${tag}@example.com`, role: 'viewer' });
+  const list = (await rest('GET', `${P}/invites`, ceo.key)).data;
+  check('email: unknown emails wait for their first Google sign-in', byEmail.data.pending === true && list.emails?.some((e) => e.email === `someone.${tag}@example.com`), JSON.stringify([byEmail.data, list.emails]));
+  const cfgRes = await fetch(`${SERVER}/api/config`).then((r) => r.json());
+  check('config: tells the app whether Google sign-in is on', typeof cfgRes.google === 'boolean', JSON.stringify(cfgRes));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

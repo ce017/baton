@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionConfig } from 'motion/react';
 import { createContext, StrictMode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { type Config, loadConfig, saveConfig } from './lib/api.ts';
+import { call, type Config, isTauri, loadConfig, saveConfig } from './lib/api.ts';
 import { Shell } from './screens/Shell.tsx';
 import { SignIn } from './screens/SignIn.tsx';
 import { ToastProvider } from './ui.tsx';
@@ -54,6 +54,18 @@ function App() {
     await saveConfig(next);
     queryClient.clear();
   }, []);
+
+  // Opening an invite link in the browser while signed in: join right away.
+  useEffect(() => {
+    if (!cfg?.userKey || isTauri) return;
+    const m = /^\/join\/([A-Za-z0-9]{10,64})/.exec(window.location.pathname);
+    if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
+    if (!m) return;
+    call<{ project: string }>(cfg, 'POST', `/api/invites/${m[1]}/join`, {})
+      .then((r) => update({ project: r.project }))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg?.userKey]);
 
   const value = useMemo(() => (cfg ? { cfg, update, signOut } : null), [cfg, update, signOut]);
   if (!value) return null;

@@ -8,7 +8,7 @@ import { useLive } from '../lib/live.ts';
 import { Avatar, EASE_MOVE, Skel, useToast } from '../ui.tsx';
 import { BoardScreen } from './BoardScreen.tsx';
 import { MessagesScreen } from './MessagesScreen.tsx';
-import { Notifier } from './Notifier.tsx';
+import { Notifier, UpdateNotice } from './Notifier.tsx';
 import { Waker } from './Waker.tsx';
 import { ObsidianSync } from './Obsidian.tsx';
 import { PagesScreen } from './PagesScreen.tsx';
@@ -167,6 +167,7 @@ export function Shell() {
         )}
       </header>
 
+      <UpdateNotice />
       <main className="view">
         {!slug && !me.isLoading ? (
           <CreateProject first />

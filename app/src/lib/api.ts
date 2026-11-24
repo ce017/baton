@@ -12,6 +12,22 @@ export interface Config {
   dirs?: Record<string, string>;
 }
 
+/** The public Baton server; people can still point the app at their own. */
+export const DEFAULT_SERVER = 'https://baton.baton-server.workers.dev';
+
+/** Calls that need no sign-in (joining with an invite, using a sign-in link). */
+export async function publicCall<T>(server: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(new URL(path, server), { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    throw new ApiError("Couldn't reach the Baton server.", 0);
+  }
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new ApiError(data.error ?? `Error ${res.status}`, res.status);
+  return data;
+}
+
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 export async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

@@ -190,6 +190,19 @@ export class ProjectDO extends DurableObject<unknown> {
    * Owners manage everyone; admins manage members and viewers but never admins.
    * `role: 'none'` removes the person.
    */
+  /** Joins someone through an invite link or an email invite (no actor: the invite is the permission). Never lowers a role. */
+  async joinMember(target: { userId: string; name: string }, role: Role): Promise<Role> {
+    if (role === 'owner') role = 'admin';
+    const cur = this.role(target.userId);
+    if (cur && ROLE_RANK[cur] >= ROLE_RANK[role]) return cur;
+    this.sql.exec(
+      'INSERT INTO members(user_id, name, role, added_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET role = excluded.role, name = excluded.name',
+      target.userId, target.name, role, Date.now(),
+    );
+    this.broadcast('members');
+    return role;
+  }
+
   async setMember(
     actor: Actor,
     target: { userId: string; name: string },
