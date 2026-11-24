@@ -849,7 +849,8 @@ export class ProjectDO extends DurableObject<unknown> {
         skills: count("SELECT COUNT(*) AS c FROM items WHERE kind = 'skill'"),
         openTasks: count("SELECT COUNT(*) AS c FROM tasks WHERE status != 'done'"),
       },
-      unread: this.unread(actor, 99).length,
+      // People see unread chat messages (per conversation); Claudes keep their hook inbox count.
+      unread: actor.agentId ? this.unread(actor, 99).length : (await this.conversations(actor)).reduce((n, c) => n + c.unread, 0),
       now,
     };
   }

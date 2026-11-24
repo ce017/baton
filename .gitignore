@@ -6,3 +6,4 @@ scripts/.local/
 app/dist/
 app/src-tauri/target/
 app/src-tauri/gen/
+app/public/.devcfg.json

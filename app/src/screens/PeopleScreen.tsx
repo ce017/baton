@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Download, Plug, PlugZap, Plus, Unplug } from 'lucide-react';
+import { Download, Plug, Plus, Unplug } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call, isTauri, type Role, tauriInvoke, type TreeItem } from '../lib/api.ts';
@@ -7,34 +7,34 @@ import { Avatar, DrawCheck, Skel, useToast } from '../ui.tsx';
 import { CreateProject, useProject, useProjectQuery } from './Shell.tsx';
 
 const ROLE_HELP: Record<Role, string> = {
-  owner: 'Everything, including admins',
-  admin: 'Edit everything, manage members and viewers',
-  member: 'Read and use it; post, comment, lock, set status',
-  viewer: 'Look in the app; their Claude stays out',
+  owner: 'Everything, including choosing admins',
+  admin: 'Change everything, add and remove people',
+  member: 'Use everything, comment and chat, but not change it',
+  viewer: "Look only. Their Claude can't use the project",
 };
+const ROLE_NAME: Record<Role, string> = { owner: 'Owner', admin: 'Admin', member: 'Member', viewer: 'Viewer' };
 
 export function PeopleScreen(_: { onCreateProject: () => void }) {
   const { overview } = useProject();
   const [newProject, setNewProject] = useState(false);
   return (
-    <>
-      <header className="topbar">
-        <h1>People &amp; Claude</h1>
-        <span className="faint">Who can do what, and this PC's Claude</span>
-        <div className="grow" />
-        <button type="button" className="btn" onClick={() => setNewProject((v) => !v)}>
-          <Plus size={15} /> New project
-        </button>
-      </header>
-      <div className="content scroll">
-        <div className="page-pad" style={{ maxWidth: 880, display: 'grid', gap: 20 }}>
-          {newProject && <CreateProject onDone={() => setNewProject(false)} />}
-          <ThisClaude />
-          {overview ? <Members /> : <Skel h={180} r={10} />}
-          <Skills />
+    <div className="pagewrap">
+      <div className="setpage">
+        <div className="sethead">
+          <div className="grow">
+            <h1>Team</h1>
+            <p>Who's in this project, what they can do, and your Claude on this PC.</p>
+          </div>
+          <button type="button" className="btn ghost" onClick={() => setNewProject((v) => !v)}>
+            <Plus size={15} /> New project
+          </button>
         </div>
+        {newProject && <div style={{ marginTop: 16 }}><CreateProject onDone={() => setNewProject(false)} /></div>}
+        <ThisClaude />
+        {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
+        <Skills />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -66,48 +66,44 @@ function Members() {
   }
 
   return (
-    <section className="card">
-      <div className="card-pad" style={{ paddingBottom: 0 }}>
-        <h2 className="section-title">Members of {overview!.project.name}</h2>
-      </div>
-      <table className="plain">
-        <thead>
-          <tr><th>Person</th><th>Role</th><th>Can</th><th /></tr>
-        </thead>
-        <tbody>
-          {overview!.members.map((m) => {
-            const editableRow = canManage && m.role !== 'owner' && (mine === 'owner' || m.role !== 'admin') && m.name !== cfg.user;
-            return (
-              <tr key={m.name}>
-                <td><span className="row"><Avatar label={m.name} /> {m.name}{m.name === cfg.user ? <span className="faint"> (you)</span> : null}</span></td>
-                <td>
-                  {editableRow ? (
-                    <select className="input" style={{ width: 120, height: 28 }} value={m.role} onChange={(e) => setMember(m.name, e.target.value as Role)}>
-                      {assignable.map((r) => <option key={r} value={r}>{r}</option>)}
+    <>
+      <h2 className="setsec">People in {overview!.project.name}</h2>
+      <div className="setgroup">
+        {overview!.members.map((m) => {
+          const editable = canManage && m.role !== 'owner' && (mine === 'owner' || m.role !== 'admin') && m.name !== cfg.user;
+          return (
+            <div key={m.name} className="setrow">
+              <Avatar label={m.name} />
+              <div className="tx">
+                <div className="t">{m.name}{m.name === cfg.user && <span className="faint" style={{ fontWeight: 400 }}>you</span>}</div>
+                <div className="d">{ROLE_HELP[m.role]}</div>
+              </div>
+              <div className="ctl">
+                {editable ? (
+                  <>
+                    <select className="selectlike" value={m.role} onChange={(e) => setMember(m.name, e.target.value as Role)} aria-label={`Role for ${m.name}`}>
+                      {assignable.map((r) => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
                     </select>
-                  ) : (
-                    <span className="chip role">{m.role}</span>
-                  )}
-                </td>
-                <td className="muted">{ROLE_HELP[m.role]}</td>
-                <td style={{ textAlign: 'right' }}>
-                  {editableRow && <button type="button" className="btn ghost sm danger" onClick={() => setMember(m.name, 'none')}>Remove</button>}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {canManage && (
-        <form onSubmit={add} className="row card-pad" style={{ borderTop: '1px solid var(--line)' }}>
-          <input className="input grow" value={name} onChange={(e) => setName(e.target.value)} placeholder="Their Baton name, e.g. boe" />
-          <select className="input" style={{ width: 130 }} value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            {assignable.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-          <button className="btn" disabled={!name.trim()}>Add</button>
-        </form>
-      )}
-    </section>
+                    <button type="button" className="btn ghost sm danger" onClick={() => setMember(m.name, 'none')}>Remove</button>
+                  </>
+                ) : (
+                  <span className="muted" style={{ fontWeight: 550 }}>{ROLE_NAME[m.role]}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {canManage && (
+          <form onSubmit={add} className="setrow">
+            <input className="input grow" value={name} onChange={(e) => setName(e.target.value)} placeholder="Add someone by their Baton name, e.g. boe" />
+            <select className="selectlike" value={role} onChange={(e) => setRole(e.target.value as Role)} aria-label="Role for the new person">
+              {assignable.map((r) => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
+            </select>
+            <button className="btn" disabled={!name.trim()}>Add</button>
+          </form>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -147,11 +143,11 @@ function ThisClaude() {
     }
   }
 
-  async function connect() {
+  async function run(cmd: 'connect_claude' | 'disconnect_claude') {
     setBusy(true);
     try {
-      await call(cfg, 'POST', '/api/agents/default', { project: slug }, 'agent');
-      const msg = await tauriInvoke<string>('connect_claude');
+      if (cmd === 'connect_claude') await call(cfg, 'POST', '/api/agents/default', { project: slug }, 'agent');
+      const msg = await tauriInvoke<string>(cmd);
       await status.refetch();
       toast(msg);
     } catch (err) {
@@ -161,70 +157,66 @@ function ThisClaude() {
     }
   }
 
-  async function disconnect() {
-    setBusy(true);
-    try {
-      toast(await tauriInvoke<string>('disconnect_claude'));
-      await status.refetch();
-    } catch (err) {
-      toast(String((err as Error).message ?? err), false);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <section className="card card-pad">
-      <h2 className="section-title"><Bot size={14} /> This PC's Claude</h2>
-      {!cfg.agentKey ? (
-        <form onSubmit={createKey}>
-          <p className="muted" style={{ marginTop: 0 }}>Give your Claude its own key. It works as you, with your role, and you can revoke it any time.</p>
-          <div className="row">
-            <input className="input" style={{ width: 200 }} value={agentName} onChange={(e) => setAgentName(e.target.value)} />
-            <button className="btn primary" disabled={busy || !agentName.trim()}>Create key</button>
-          </div>
-        </form>
-      ) : (
-        <>
-          <div className="row" style={{ marginBottom: 12 }}>
-            <Avatar label={cfg.user ?? '?'} bot size="lg" />
-            <div className="grow">
-              <div style={{ fontWeight: 600 }}>{cfg.user}'s {cfg.agentName ?? 'Claude'}</div>
-              <div className="faint" style={{ fontSize: 12 }}>
-                Default project: <span className="mono">{cfg.project ?? slug}</span>
-                {agentCard ? ` · last seen in this project` : ' · has not checked in here yet'}
+    <>
+      <h2 className="setsec">Your Claude on this PC</h2>
+      <div className="setgroup">
+        {!cfg.agentKey ? (
+          <form onSubmit={createKey} className="setrow">
+            <div className="tx">
+              <div className="t">Give your Claude a key</div>
+              <div className="d">It works as you, with your role. You can revoke it any time.</div>
+            </div>
+            <div className="ctl">
+              <input className="input" style={{ width: 150 }} value={agentName} onChange={(e) => setAgentName(e.target.value)} aria-label="Claude name" />
+              <button className="btn primary" disabled={busy || !agentName.trim()}>Create key</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="setrow">
+              <Avatar label={cfg.user ?? '?'} bot />
+              <div className="tx">
+                <div className="t">{cfg.user}'s {cfg.agentName ?? 'Claude'}</div>
+                <div className="d">{agentCard ? 'Has worked in this project' : "Hasn't checked in here yet"}</div>
+              </div>
+              <div className="ctl">
+                {isTauri && connected && <span className="chip done"><DrawCheck size={11} /> Connected</span>}
               </div>
             </div>
-            {isTauri ? (
-              connected ? (
-                <>
-                  <span className="chip done"><DrawCheck size={11} /> Connected to Claude Code</span>
-                  <button type="button" className="btn ghost" onClick={connect} disabled={busy} title="Re-apply the connection"><PlugZap size={14} /></button>
-                  <button type="button" className="btn ghost danger" onClick={disconnect} disabled={busy}><Unplug size={14} /> Disconnect</button>
-                </>
-              ) : (
-                <button type="button" className="btn primary" onClick={connect} disabled={busy || status.isLoading}>
-                  <Plug size={14} /> Connect to Claude Code
-                </button>
-              )
-            ) : null}
-          </div>
-          {isTauri && status.data && !status.data.claudeFound && (
-            <p className="error-text">Claude Code isn't installed on this PC (the <span className="mono">claude</span> command wasn't found). Install it, then connect.</p>
-          )}
-          {isTauri ? (
-            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
-              Connecting adds the Baton tools to Claude Code and four small hooks: the brief at session start, new messages at each prompt, edits to the live feed, and its last reply for handoffs. Your settings file is backed up first.
-            </p>
-          ) : (
-            <>
-              <p className="muted">In the desktop app this is one button. From a terminal:</p>
-              <div className="codeblock">node connector/cli.mjs use {slug}{'\n'}node connector/cli.mjs connect</div>
-            </>
-          )}
-        </>
-      )}
-    </section>
+            <div className="setrow">
+              <div className="tx">
+                <div className="t">Claude Code</div>
+                <div className="d">
+                  {isTauri
+                    ? 'Adds the Baton tools and four small hooks: the brief at start, new messages, edits to the feed, and its last reply for hand-overs. Your settings are backed up first.'
+                    : <>In the desktop app this is one button. From a terminal: <span className="mono">node connector/cli.mjs connect</span></>}
+                </div>
+                {isTauri && status.data && !status.data.claudeFound && (
+                  <div className="error-text" style={{ marginTop: 6 }}>Claude Code isn't installed on this PC. Install it, then connect.</div>
+                )}
+              </div>
+              {isTauri && (
+                <div className="ctl">
+                  {connected ? (
+                    <button type="button" className="btn ghost danger" onClick={() => run('disconnect_claude')} disabled={busy}><Unplug size={14} /> Disconnect</button>
+                  ) : (
+                    <button type="button" className="btn primary" onClick={() => run('connect_claude')} disabled={busy || status.isLoading}><Plug size={14} /> Connect</button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="setrow">
+              <div className="tx">
+                <div className="t">Default project</div>
+                <div className="d">Where your Claude reports when a chat doesn't say otherwise.</div>
+              </div>
+              <div className="ctl"><span style={{ fontWeight: 550 }}>{overview?.project.name ?? cfg.project ?? slug}</span></div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -239,8 +231,7 @@ function Skills() {
     setBusy(true);
     try {
       const bundle = await call<unknown[]>(cfg, 'GET', `/api/projects/${slug}/skills`);
-      const msg = await tauriInvoke<string>('install_skills', { project: slug, bundle: JSON.stringify(bundle) });
-      toast(msg);
+      toast(await tauriInvoke<string>('install_skills', { project: slug, bundle: JSON.stringify(bundle) }));
     } catch (err) {
       toast(String((err as Error).message ?? err), false);
     } finally {
@@ -249,26 +240,31 @@ function Skills() {
   }
 
   return (
-    <section className="card card-pad">
-      <div className="row">
-        <h2 className="section-title grow" style={{ margin: 0 }}>Shared skills</h2>
+    <>
+      <h2 className="setsec">
+        Shared skills
         {isTauri && skills.length > 0 && (
-          <button type="button" className="btn" onClick={install} disabled={busy}><Download size={14} /> Install on this PC</button>
+          <button type="button" className="btn ghost sm act" onClick={install} disabled={busy}><Download size={14} /> Install on this PC</button>
+        )}
+      </h2>
+      <div className="setgroup">
+        {skills.length ? skills.map((s) => (
+          <div key={s.path} className="setrow">
+            <div className="tx">
+              <div className="t">{s.title}</div>
+              <div className="d truncate">{s.summary}</div>
+            </div>
+            <div className="ctl faint">v{s.version}</div>
+          </div>
+        )) : (
+          <div className="setrow">
+            <div className="tx">
+              <div className="t">No shared skills yet</div>
+              <div className="d">Share one with <span className="mono">baton skills push &lt;folder&gt;</span> so every Claude here gets the same know-how.</div>
+            </div>
+          </div>
         )}
       </div>
-      {skills.length ? (
-        <ul style={{ margin: '10px 0 0', padding: 0, listStyle: 'none' }}>
-          {skills.map((s) => (
-            <li key={s.path} className="row" style={{ padding: '6px 0', borderTop: '1px solid var(--line)' }}>
-              <span className="mono" style={{ width: 180 }}>{s.title}</span>
-              <span className="muted grow truncate">{s.summary}</span>
-              <span className="faint">v{s.version}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="faint" style={{ marginBottom: 0 }}>None yet. Share one with <span className="mono">baton skills push &lt;folder&gt;</span>, so every Claude here gets the same know-how.</p>
-      )}
-    </section>
+    </>
   );
 }
