@@ -55,13 +55,13 @@ export class ApiError extends Error {
 }
 
 /** Calls the Baton server. `key` is 'user' | 'agent' | 'admin:<token>'. */
-export async function api(cfg, method, path, { key = 'agent', body, timeoutMs = 15000, raw = false } = {}) {
+export async function api(cfg, method, path, { key = 'agent', body, timeoutMs = 15000, raw = false, headers = {} } = {}) {
   if (!cfg.server) throw new ApiError('No server set. Run: baton login --server <url> --key <user key>', 0);
   const token = key.startsWith('admin:') ? key.slice(6) : key === 'user' ? cfg.userKey : cfg.agentKey;
   if (!token) throw new ApiError(key === 'user' ? 'No user key. Run: baton login' : 'No agent key. Run: baton agent create', 0);
   const res = await fetch(new URL(path, cfg.server), {
     method,
-    headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+    headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(timeoutMs),
   });

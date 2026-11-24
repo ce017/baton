@@ -6,6 +6,7 @@ import {
   ago,
   assertNoSecret,
   BatonError,
+  cleanJob,
   clip,
   isRole,
   ROLE_RANK,
@@ -63,6 +64,17 @@ export interface SkillArgs {
   body?: string;
   summary?: string;
   files?: Record<string, string>;
+}
+
+type JobRow = { id: string; user_id: string; name: string; instructions: string; labels: string; updated_at: number };
+
+function parseList(json: string): string[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 type ItemRow = {
@@ -145,6 +157,9 @@ export class ProjectDO extends DurableObject<unknown> {
       this.sql.exec("ALTER TABLE messages ADD COLUMN from_user TEXT NOT NULL DEFAULT ''");
     } catch {}
     this.sql.exec('CREATE TABLE IF NOT EXISTS chat_reads(user_id TEXT NOT NULL, conv TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(user_id, conv))');
+    // Claude jobs: a person's named roles for their Claude chats, and which chat has which job.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, instructions TEXT NOT NULL, labels TEXT NOT NULL, updated_at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS chats(session TEXT PRIMARY KEY, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, job_id TEXT, title TEXT NOT NULL, cwd TEXT NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL)');
   }
 
   // ---------------------------------------------------------------- setup & roles
@@ -218,6 +233,7 @@ export class ProjectDO extends DurableObject<unknown> {
     const me = actorId(actor);
     const out: string[] = [];
     out.push(`Baton · ${this.meta('name')} · you are ${actorLabel(actor)} (${role}) · ${new Date(now).toISOString().slice(0, 16)}Z`);
+    out.push(...this.jobBrief(actor));
     out.push(`People: ${this.memberRows().map((m) => `${m.name} (${m.role})`).join(', ')}`);
     out.push(UNTRUSTED);
 
@@ -1116,6 +1132,111 @@ export class ProjectDO extends DurableObject<unknown> {
         'SELECT area, actor_id, label, note, at FROM locks WHERE expires_at > ? ORDER BY at DESC LIMIT 12', now,
       )
       .toArray();
+  }
+
+  // ---------------------------------------------------------------- Claude jobs (one job per native Claude chat)
+  /** Records that a chat (Claude Code session) is working here and returns its job, if it has one. */
+  async jobFor(actor: Actor, session: string, info: { cwd?: string; title?: string } = {}): Promise<string | null> {
+    this.need(actor, 'member');
+    if (!actor.agentId) return null;
+    const now = Date.now();
+    this.sql.exec(
+      `INSERT INTO chats(session, user_id, agent_id, job_id, title, cwd, first_seen, last_seen) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
+       ON CONFLICT(session) DO UPDATE SET last_seen = excluded.last_seen,
+         title = CASE WHEN chats.title = '' THEN excluded.title ELSE chats.title END,
+         cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE chats.cwd END`,
+      session, actor.userId, actor.agentId, clip(info.title ?? '', 80), clip(info.cwd ?? '', 200), now, now,
+    );
+    const row = this.sql
+      .exec<{ name: string }>('SELECT j.name FROM chats c JOIN jobs j ON j.id = c.job_id WHERE c.session = ? AND c.user_id = ?', session, actor.userId)
+      .toArray()[0];
+    return row?.name ?? null;
+  }
+
+  /** Gives a chat a job by name (or clears it with null). Works from the person's app or the chat itself. */
+  async setChatJob(actor: Actor, session: string, jobName: string | null): Promise<{ job: string | null; instructions: string; labels: string[] }> {
+    this.need(actor, 'member');
+    let job: JobRow | undefined;
+    if (jobName) {
+      job = this.sql.exec<JobRow>('SELECT * FROM jobs WHERE user_id = ? AND lower(name) = lower(?)', actor.userId, jobName.trim()).toArray()[0];
+      if (!job) {
+        const names = this.sql.exec<{ name: string }>('SELECT name FROM jobs WHERE user_id = ? ORDER BY name', actor.userId).toArray().map((r) => r.name);
+        throw new BatonError(`No job "${jobName}". ${names.length ? `Your jobs: ${names.join(', ')}.` : 'Make one in the Baton app (Team, Your Claudes).'}`, 404);
+      }
+    }
+    const owned = this.sql.exec<{ user_id: string }>('SELECT user_id FROM chats WHERE session = ?', session).toArray()[0];
+    if (owned && owned.user_id !== actor.userId) throw new BatonError('That chat belongs to someone else.', 403);
+    const now = Date.now();
+    this.sql.exec(
+      `INSERT INTO chats(session, user_id, agent_id, job_id, title, cwd, first_seen, last_seen) VALUES (?, ?, ?, ?, '', '', ?, ?)
+       ON CONFLICT(session) DO UPDATE SET job_id = excluded.job_id`,
+      session, actor.userId, actor.agentId ?? '', job?.id ?? null, now, now,
+    );
+    this.broadcast('jobs');
+    return { job: job?.name ?? null, instructions: job?.instructions ?? '', labels: job ? parseList(job.labels) : [] };
+  }
+
+  /** The caller's jobs and recent chats (people see only their own). */
+  async jobs(actor: Actor) {
+    this.need(actor, 'member');
+    const jobs = this.sql.exec<JobRow>('SELECT * FROM jobs WHERE user_id = ? ORDER BY name', actor.userId).toArray();
+    const chats = this.sql
+      .exec<{ session: string; title: string; cwd: string; last_seen: number; first_seen: number; job: string | null }>(
+        `SELECT c.session, c.title, c.cwd, c.last_seen, c.first_seen, j.name AS job FROM chats c LEFT JOIN jobs j ON j.id = c.job_id
+         WHERE c.user_id = ? ORDER BY c.last_seen DESC LIMIT 20`,
+        actor.userId,
+      )
+      .toArray();
+    return {
+      now: Date.now(),
+      jobs: jobs.map((j) => ({ id: j.id, name: j.name, instructions: j.instructions, labels: parseList(j.labels), updatedAt: j.updated_at })),
+      chats,
+    };
+  }
+
+  async saveJob(actor: Actor, a: { id?: string; name?: string; instructions?: string; labels?: string[] }) {
+    this.need(actor, 'member');
+    if (actor.agentId) throw new BatonError('People set up jobs, not their Claudes.', 403);
+    const name = cleanJob(a.name);
+    if (!name) throw new BatonError('Give the job a name, like Scripting.');
+    const instructions = clip(a.instructions ?? '', 2000);
+    const labels = (a.labels ?? []).map((l) => clip(String(l).trim(), 40)).filter(Boolean).slice(0, 12);
+    assertNoSecret(name, instructions, labels.join(' '));
+    const clash = this.sql.exec<{ id: string }>('SELECT id FROM jobs WHERE user_id = ? AND lower(name) = lower(?)', actor.userId, name).toArray()[0];
+    if (clash && clash.id !== a.id) throw new BatonError(`You already have a job called ${name}.`, 409);
+    const now = Date.now();
+    if (a.id) {
+      const cur = this.sql.exec<{ user_id: string }>('SELECT user_id FROM jobs WHERE id = ?', a.id).toArray()[0];
+      if (!cur || cur.user_id !== actor.userId) throw new BatonError('No such job.', 404);
+      this.sql.exec('UPDATE jobs SET name = ?, instructions = ?, labels = ?, updated_at = ? WHERE id = ?', name, instructions, JSON.stringify(labels), now, a.id);
+    } else {
+      const id = `j_${crypto.randomUUID().slice(0, 8)}`;
+      this.sql.exec('INSERT INTO jobs(id, user_id, name, instructions, labels, updated_at) VALUES (?, ?, ?, ?, ?, ?)', id, actor.userId, name, instructions, JSON.stringify(labels), now);
+    }
+    this.broadcast('jobs');
+    return this.jobs(actor);
+  }
+
+  async deleteJob(actor: Actor, id: string) {
+    this.need(actor, 'member');
+    if (actor.agentId) throw new BatonError('People set up jobs, not their Claudes.', 403);
+    this.sql.exec('UPDATE chats SET job_id = NULL WHERE job_id = ? AND user_id = ?', id, actor.userId);
+    this.sql.exec('DELETE FROM jobs WHERE id = ? AND user_id = ?', id, actor.userId);
+    this.broadcast('jobs');
+    return this.jobs(actor);
+  }
+
+  /** The brief's opening lines for a Claude chat that has a job. */
+  private jobBrief(actor: Actor): string[] {
+    if (!actor.agentId || !actor.job) return [];
+    const job = this.sql.exec<JobRow>('SELECT * FROM jobs WHERE user_id = ? AND lower(name) = lower(?)', actor.userId, actor.job).toArray()[0];
+    if (!job) return [];
+    const labels = parseList(job.labels);
+    const out = ['', `YOUR JOB: ${job.name} (set by ${actor.userName})`];
+    if (job.instructions) out.push(job.instructions);
+    if (labels.length) out.push(`Take to-dos labelled: ${labels.join(', ')}. Leave other to-dos to the Claude whose job fits.`);
+    out.push(`Pass job: "${job.name}" in every baton_* tool call, so your updates show as ${actorLabel(actor)}.`);
+    return out;
   }
 
   private visibleMessages(actor: Actor, limit: number, afterSeq = 0) {

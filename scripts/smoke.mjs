@@ -196,5 +196,34 @@ check('chat: opening it marks it read', convs2.find((c) => c.key === ceo.name)?.
 const mineThread = (await rest('GET', `${P}/chat?with=${boe.name}`, ceo.key)).data;
 check("chat: the sender sees their own (their Claude's) message as theirs", mineThread.some((m) => m.mine && m.text.includes('Can you take T-1')), JSON.stringify(mineThread).slice(0, 300));
 
+// ---- Claude jobs (one job per native Claude chat)
+{
+const mkJob = await rest('POST', `${P}/jobs`, ceo.key, { name: 'Scripting', instructions: 'You write Luau.', labels: ['UI'] });
+check('jobs: a person adds a job', mkJob.status === 200 && mkJob.data.jobs?.some((j) => j.name === 'Scripting'), JSON.stringify(mkJob.data));
+const agentJob = await rest('POST', `${P}/jobs`, ceoA, { name: 'Sneaky' });
+check('jobs: Claudes cannot make jobs', agentJob.status === 403, JSON.stringify(agentJob.data));
+const sess = `sess-${tag}-0001`;
+const chatHook = (path, init = {}) => fetch(`${SERVER}${path}`, { ...init, headers: { authorization: `Bearer ${ceoA}`, 'x-baton-session': sess, 'x-baton-title': encodeURIComponent('Fix the sell button'), ...(init.body ? { 'content-type': 'application/json' } : {}) } });
+const b0 = await (await chatHook(`/api/brief?project=${slug}`)).text();
+check('jobs: a new chat has no job yet', !b0.includes('YOUR JOB'), b0.slice(0, 200));
+const bad = await (await chatHook('/api/chat-job', { method: 'POST', body: JSON.stringify({ project: slug, session: sess, job: 'Videos' }) })).json();
+check('jobs: an unknown job is refused with the list', String(bad.error ?? '').includes('Scripting'), JSON.stringify(bad));
+const pick = await (await chatHook('/api/chat-job', { method: 'POST', body: JSON.stringify({ project: slug, session: sess, job: 'scripting' }) })).json();
+check('jobs: "baton job scripting" binds the chat', pick.job === 'Scripting' && pick.labels?.[0] === 'UI', JSON.stringify(pick));
+const b1 = await (await chatHook(`/api/brief?project=${slug}`)).text();
+check("jobs: the chat's brief carries its job", b1.includes('YOUR JOB: Scripting') && b1.includes('Scripting Claude') && b1.includes('You write Luau.'), b1.slice(0, 300));
+await chatHook('/api/events', { method: 'POST', body: JSON.stringify({ project: slug, kind: 'edit', text: 'src/Sell.lua' }) });
+const ov = (await rest('GET', `${P}/overview`, ceo.key)).data;
+check('jobs: the chat shows as its own Claude', ov.live?.some((l) => l.label === `${ceo.name}'s Scripting Claude`), JSON.stringify(ov.live?.map((l) => l.label)));
+const viaMcp = await c.call('baton_brief', { project: slug, job: 'Scripting' });
+check('jobs: MCP calls carry the job', viaMcp.text.includes('YOUR JOB: Scripting'), viaMcp.text.slice(0, 200));
+const list = (await rest('GET', `${P}/jobs`, ceo.key)).data;
+check('jobs: the app lists the chat with its job and title', list.chats?.some((x) => x.session === sess && x.job === 'Scripting' && x.title === 'Fix the sell button'), JSON.stringify(list.chats));
+const steal = await rest('POST', `${P}/chatjob`, boe.key, { session: sess, job: null });
+check("jobs: nobody else changes your chat's job", steal.status === 403, JSON.stringify(steal.data));
+const boeList = (await rest('GET', `${P}/jobs`, boe.key)).data;
+check('jobs: people only see their own jobs and chats', boeList.jobs?.length === 0 && boeList.chats?.length === 0, JSON.stringify(boeList));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

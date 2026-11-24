@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call, isTauri, type Role, tauriInvoke, type TreeItem } from '../lib/api.ts';
 import { Avatar, DrawCheck, Skel, useToast } from '../ui.tsx';
+import { JobsSection } from './JobsSection.tsx';
 import { CreateProject, useProject, useProjectQuery } from './Shell.tsx';
 
 const ROLE_HELP: Record<Role, string> = {
@@ -15,7 +16,7 @@ const ROLE_HELP: Record<Role, string> = {
 const ROLE_NAME: Record<Role, string> = { owner: 'Owner', admin: 'Admin', member: 'Member', viewer: 'Viewer' };
 
 export function PeopleScreen(_: { onCreateProject: () => void }) {
-  const { overview } = useProject();
+  const { cfg, overview } = useProject();
   const [newProject, setNewProject] = useState(false);
   return (
     <div className="pagewrap">
@@ -31,6 +32,7 @@ export function PeopleScreen(_: { onCreateProject: () => void }) {
         </div>
         {newProject && <div style={{ marginTop: 16 }}><CreateProject onDone={() => setNewProject(false)} /></div>}
         <ThisClaude />
+        {cfg.agentKey && <JobsSection />}
         {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
         <Skills />
       </div>

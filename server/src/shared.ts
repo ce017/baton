@@ -14,15 +14,29 @@ export interface Actor {
   userName: string;
   agentId?: string;
   agentName?: string;
+  /** The job of the Claude chat making the call ("Scripting"), from its session or the tool call. */
+  job?: string;
+}
+
+/** Normalises a job name: letters, digits, spaces and dashes, at most 30 characters. */
+export function cleanJob(s: unknown): string | undefined {
+  if (typeof s !== 'string') return undefined;
+  const t = s.replace(/[^\p{L}\p{N} -]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 30);
+  return t || undefined;
+}
+
+export function jobKey(job: string): string {
+  return job.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-');
 }
 
 export function actorId(a: Actor): string {
-  return a.agentId ?? a.userId;
+  return a.agentId ? (a.job ? `${a.agentId}#${jobKey(a.job)}` : a.agentId) : a.userId;
 }
 
 /** "ceo's Claude" for agents, "ceo" for humans. */
 export function actorLabel(a: Actor): string {
-  return a.agentId ? `${a.userName}'s ${a.agentName ?? 'Claude'}` : a.userName;
+  if (!a.agentId) return a.userName;
+  return a.job ? `${a.userName}'s ${a.job} Claude` : `${a.userName}'s ${a.agentName ?? 'Claude'}`;
 }
 
 /**

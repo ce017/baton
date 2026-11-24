@@ -18,6 +18,12 @@ export function ownerName(label: string): string {
   return label.replace(/'s\s.*$/, '').trim().toLowerCase();
 }
 
+/** "ceo's Scripting Claude" seen by ceo → "Your Scripting Claude". */
+export function yourLabel(label: string): string {
+  const i = label.indexOf("'s ");
+  return i < 0 ? label : `Your ${label.slice(i + 3)}`;
+}
+
 export function personColor(label: string): string {
   const name = ownerName(label);
   let h = 0;

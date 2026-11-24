@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call } from '../lib/api.ts';
-import { ago, ownerName, presence } from '../lib/format.ts';
+import { ago, ownerName, presence, yourLabel } from '../lib/format.ts';
 import { Avatar, EASE_OUT, Empty, Skel, useToast } from '../ui.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
@@ -124,7 +124,7 @@ export function MessagesScreen() {
                   {!(m.mine && !m.fromAgent) && <Avatar label={m.from_label} bot={m.fromAgent} />}
                   <div style={{ minWidth: 0 }}>
                     <div className="who">
-                      <b>{m.mine && !m.fromAgent ? 'You' : m.mine ? 'Your Claude' : m.from_label}</b>
+                      <b>{m.mine && !m.fromAgent ? 'You' : m.mine ? yourLabel(m.from_label) : m.from_label}</b>
                       {m.kind !== 'fyi' && <span className={`kindtag ${m.kind}`}>{m.kind === 'handoff' ? 'hand-over' : m.kind}</span>}
                       <span className="t">{ago(m.at, now)}</span>
                     </div>
@@ -157,7 +157,7 @@ export function MessagesScreen() {
                 {matches.map((m, i) => (
                   <div key={m.name} className={`pi ${i === sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onMouseDown={(e) => { e.preventDefault(); pick(m.name); }}>
                     <Avatar label={m.name} bot={m.bot} size="sm" />
-                    {ownerName(m.name) === me && m.bot ? 'Your Claude' : m.name}
+                    {ownerName(m.name) === me && m.bot ? yourLabel(m.name) : m.name}
                     <span className="s"><span className={`dot ${m.status === 'live' ? 'live' : m.status === 'idle' ? 'idle' : 'away'}`} style={{ display: 'inline-block', marginRight: 5 }} />{m.status === 'live' ? 'Active' : m.status === 'idle' ? 'Idle' : 'Away'}</span>
                   </div>
                 ))}

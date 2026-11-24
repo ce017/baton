@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call, canEdit, type FeedRow, type LiveCard, type Task, type TaskStatus } from '../lib/api.ts';
-import { ago, ownerName, presence } from '../lib/format.ts';
+import { ago, ownerName, yourLabel, presence } from '../lib/format.ts';
 import { Avatar, EASE_IN, EASE_OUT, Skel, useToast } from '../ui.tsx';
 import { Comments } from './PagesScreen.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
@@ -52,7 +52,7 @@ export function BoardScreen() {
   const sideOpen = !!open || activity;
   const now = overview?.now ?? Date.now();
   const me = cfg.user ?? '';
-  const nameOf = (label: string) => (label === me ? 'You' : ownerName(label) === me && label.includes("'s ") ? 'Your Claude' : label);
+  const nameOf = (label: string) => (label === me ? 'You' : ownerName(label) === me && label.includes("'s ") ? yourLabel(label) : label);
   const live = (overview?.live ?? []).filter((c) => c.isAgent || c.doing).sort((a, b) => Number(b.isAgent) - Number(a.isAgent) || b.lastSeen - a.lastSeen);
   const agentFor = (assignee: string) => overview?.live.find((c) => c.isAgent && c.label.toLowerCase() === assignee.trim().toLowerCase());
   const helpers = (overview?.live ?? []).filter((c) => c.isAgent && ownerName(c.label) !== me);

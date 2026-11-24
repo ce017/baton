@@ -92,12 +92,33 @@ async function main() {
   if (!cfg.server || !cfg.agentKey) return;
   const project = projectFor(cfg, input.cwd);
   const q = project ? `?project=${encodeURIComponent(project)}` : '';
-  const opts = { timeoutMs: TIMEOUT };
+  // The session id lets each Claude chat carry its own job ("ceo's Scripting Claude").
+  const headers = {};
+  if (input.session_id) headers['x-baton-session'] = String(input.session_id);
+  if (input.cwd) headers['x-baton-cwd'] = encodeURIComponent(String(input.cwd).slice(0, 200));
+  if (event === 'UserPromptSubmit' && input.prompt) headers['x-baton-title'] = encodeURIComponent(String(input.prompt).replace(/\s+/g, ' ').trim().slice(0, 80));
+  const opts = { timeoutMs: TIMEOUT, headers };
 
   if (event === 'SessionStart') {
     const brief = await api(cfg, 'GET', `/api/brief${q}`, { ...opts, raw: true });
     inject(`${brief}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)`);
   } else if (event === 'UserPromptSubmit') {
+    // "baton job Scripting" (or "baton job none") gives this chat a job.
+    const pick = /^\s*\/?baton\s+job\b[\s:]*(.*?)\s*$/i.exec(input.prompt ?? '');
+    if (pick && input.session_id) {
+      const name = pick[1] ?? '';
+      try {
+        const r = await api(cfg, 'POST', '/api/chat-job', { ...opts, body: { project, session: input.session_id, job: /^(|none|off|clear)$/i.test(name) ? null : name } });
+        inject(
+          r.job
+            ? [`(Baton) This chat is now ${cfg.user}'s ${r.job} Claude. Tell the user in one line.`, r.instructions && `Job instructions: ${r.instructions}`, r.labels?.length && `Take to-dos labelled: ${r.labels.join(', ')}.`, `Pass job: "${r.job}" in every baton_* tool call.`].filter(Boolean).join('\n')
+            : '(Baton) This chat has no job now. Tell the user in one line.',
+        );
+      } catch (e) {
+        inject(`(Baton) Could not set the job: ${e.message} Tell the user.`);
+      }
+      return;
+    }
     inject(await api(cfg, 'GET', `/api/hook/inbox${q}`, { ...opts, raw: true }));
   } else if (event === 'PostToolUse') {
     const target = editTarget(input, input.cwd);

@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { ProjectDO } from './project.ts';
-import { type Actor, readError } from './shared.ts';
+import { type Actor, cleanJob, readError } from './shared.ts';
 
 export const INSTRUCTIONS = [
   "Baton is this project's shared workspace for its people and their Claudes.",
@@ -17,6 +17,11 @@ const project = z
   .string()
   .optional()
   .describe('Project slug. Leave out to use your default project.');
+
+const job = z
+  .string()
+  .optional()
+  .describe('Your job, if your brief named one (e.g. "Scripting"). Pass it on every call.');
 
 type ProjectStub = DurableObjectStub<ProjectDO>;
 
@@ -42,6 +47,11 @@ const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: fals
 export function buildMcpServer(ctx: ToolContext): McpServer {
   const server = new McpServer({ name: 'baton', version: '0.1.0' }, { instructions: INSTRUCTIONS });
   const { actor, open } = ctx;
+  /** The caller, labelled with the job its chat passed ("ceo's Scripting Claude"). */
+  const as = (j?: string): Actor => {
+    const name = cleanJob(j);
+    return name && actor.agentId ? { ...actor, job: name } : actor;
+  };
 
   server.registerTool(
     'baton_brief',
@@ -49,10 +59,10 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
       title: 'Project brief',
       description:
         'Compact state of the project: who is doing what (living handoffs), locks, messages for you, open tasks, decisions, what changed. Call at session start.',
-      inputSchema: z.object({ project }),
+      inputSchema: z.object({ project, job }),
       annotations: READ,
     },
-    async (a) => run(async () => (await open(a.project)).brief(actor)),
+    async (a) => run(async () => (await open(a.project)).brief(as(a.job))),
   );
 
   server.registerTool(
@@ -60,10 +70,10 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'What changed',
       description: 'Everything other people and Claudes did since you last called this (then marks it seen).',
-      inputSchema: z.object({ project }),
+      inputSchema: z.object({ project, job }),
       annotations: READ,
     },
-    async (a) => run(async () => (await open(a.project)).changes(actor)),
+    async (a) => run(async () => (await open(a.project)).changes(as(a.job))),
   );
 
   server.registerTool(
@@ -71,10 +81,10 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Search the vault',
       description: 'Search pages, decisions, skills and tasks. Returns paths with one-line summaries, not full text.',
-      inputSchema: z.object({ query: z.string().describe('Words to look for'), project }),
+      inputSchema: z.object({ query: z.string().describe('Words to look for'), project, job }),
       annotations: READ,
     },
-    async (a) => run(async () => (await open(a.project)).search(actor, a.query)),
+    async (a) => run(async () => (await open(a.project)).search(as(a.job), a.query)),
   );
 
   server.registerTool(
@@ -82,10 +92,10 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Read a page',
       description: 'Full text of one vault page (with its comments).',
-      inputSchema: z.object({ path: z.string().describe('Page path, e.g. "Systems/FishService"'), project }),
+      inputSchema: z.object({ path: z.string().describe('Page path, e.g. "Systems/FishService"'), project, job }),
       annotations: READ,
     },
-    async (a) => run(async () => (await open(a.project)).read(actor, a.path)),
+    async (a) => run(async () => (await open(a.project)).read(as(a.job), a.path)),
   );
 
   server.registerTool(
@@ -105,10 +115,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         pinned: z.boolean().optional().describe('Show it at the top of every brief (goals, key rules)'),
         delete: z.boolean().optional().describe('Delete the page (history is kept)'),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).write(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).write(as(j), a)),
   );
 
   server.registerTool(
@@ -122,10 +133,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         where: z.string().optional().describe('Files, scripts or areas involved'),
         next: z.string().optional().describe('The very next step someone should take'),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).status(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).status(as(j), a)),
   );
 
   server.registerTool(
@@ -140,10 +152,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         release: z.boolean().optional(),
         force: z.boolean().optional().describe('Admins only: take or free a lock someone else holds'),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).lock(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).lock(as(j), a)),
   );
 
   server.registerTool(
@@ -158,10 +171,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         text: z.string().describe('Keep it short; link pages with ref'),
         ref: z.string().optional().describe('Page path, task (T-3) or pin (P-2) it is about'),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).post(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).post(as(j), a)),
   );
 
   server.registerTool(
@@ -169,10 +183,10 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Your messages',
       description: 'New messages for you (all: true for the latest 20, read or not).',
-      inputSchema: z.object({ all: z.boolean().optional(), project }),
+      inputSchema: z.object({ all: z.boolean().optional(), project, job }),
       annotations: READ,
     },
-    async (a) => run(async () => (await open(a.project)).inbox(actor, a.all ?? false)),
+    async (a) => run(async () => (await open(a.project)).inbox(as(a.job), a.all ?? false)),
   );
 
   server.registerTool(
@@ -190,10 +204,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         notes: z.string().optional(),
         includeDone: z.boolean().optional(),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).task(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).task(as(j), a)),
   );
 
   server.registerTool(
@@ -210,10 +225,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         ref: z.string().optional().describe('Link a page path or task id to the pin'),
         target: z.string().optional().describe('P-n for done/unpin; P-n, T-n or page path for comment'),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).board(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).board(as(j), a)),
   );
 
   server.registerTool(
@@ -230,10 +246,11 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         summary: z.string().optional(),
         files: z.record(z.string(), z.string()).optional().describe('For put: extra text files {path: content}'),
         project,
+        job,
       }),
       annotations: WRITE,
     },
-    async ({ project: p, ...a }) => run(async () => (await open(p)).skill(actor, a)),
+    async ({ project: p, job: j, ...a }) => run(async () => (await open(p)).skill(as(j), a)),
   );
 
   return server;

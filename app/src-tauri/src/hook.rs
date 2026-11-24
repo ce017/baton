@@ -24,35 +24,92 @@ fn handle(event: &str, input: &Value) -> Option<()> {
     let q = project.as_deref().map(|p| format!("?project={}", urlencode(p))).unwrap_or_default();
     let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).build();
     let auth = format!("Bearer {key}");
+    // The session id lets each Claude chat carry its own job ("ceo's Scripting Claude").
+    let session = input["session_id"].as_str().unwrap_or("").to_string();
+    let prompt = input["prompt"].as_str().unwrap_or("");
+    let title: String = prompt.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect();
+    let with = |r: ureq::Request| {
+        let mut r = r.set("authorization", &auth);
+        if !session.is_empty() {
+            r = r.set("x-baton-session", &session).set("x-baton-cwd", &urlencode(&cwd.chars().take(200).collect::<String>()));
+        }
+        if event == "UserPromptSubmit" && !title.is_empty() {
+            r = r.set("x-baton-title", &urlencode(&title));
+        }
+        r
+    };
+    let post = |path: &str, body: Value| with(agent.post(&format!("{server}{path}"))).set("content-type", "application/json").send_string(&body.to_string());
 
     match event {
         "SessionStart" => {
-            let brief = agent.get(&format!("{server}/api/brief{q}")).set("authorization", &auth).call().ok()?.into_string().ok()?;
+            let brief = with(agent.get(&format!("{server}/api/brief{q}"))).call().ok()?.into_string().ok()?;
             inject(event, &format!("{brief}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)"));
         }
         "UserPromptSubmit" => {
-            let text = agent.get(&format!("{server}/api/hook/inbox{q}")).set("authorization", &auth).call().ok()?.into_string().ok()?;
+            if let (Some(name), false) = (job_pick(prompt), session.is_empty()) {
+                let none = matches!(name.to_lowercase().as_str(), "" | "none" | "off" | "clear");
+                let body = json!({ "project": project, "session": session, "job": if none { Value::Null } else { Value::String(name.clone()) } });
+                let text = match post("/api/chat-job", body) {
+                    Ok(res) => {
+                        let r: Value = res.into_string().ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}));
+                        match r["job"].as_str() {
+                            Some(job) => {
+                                let user = cfg["user"].as_str().unwrap_or("your");
+                                let mut lines = vec![format!("(Baton) This chat is now {user}'s {job} Claude. Tell the user in one line.")];
+                                if let Some(i) = r["instructions"].as_str().filter(|s| !s.is_empty()) {
+                                    lines.push(format!("Job instructions: {i}"));
+                                }
+                                let labels: Vec<&str> = r["labels"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_default();
+                                if !labels.is_empty() {
+                                    lines.push(format!("Take to-dos labelled: {}.", labels.join(", ")));
+                                }
+                                lines.push(format!("Pass job: \"{job}\" in every baton_* tool call."));
+                                lines.join("\n")
+                            }
+                            None => "(Baton) This chat has no job now. Tell the user in one line.".to_string(),
+                        }
+                    }
+                    Err(ureq::Error::Status(_, res)) => {
+                        let msg = res.into_string().ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v["error"].as_str().map(String::from)).unwrap_or_default();
+                        format!("(Baton) Could not set the job: {msg} Tell the user.")
+                    }
+                    Err(_) => "(Baton) Could not reach the Baton server to set the job. Tell the user.".to_string(),
+                };
+                inject(event, &text);
+                return Some(());
+            }
+            let text = with(agent.get(&format!("{server}/api/hook/inbox{q}"))).call().ok()?.into_string().ok()?;
             inject(event, &text);
         }
         "PostToolUse" => {
             let target = edit_target(input, cwd)?;
-            post(&agent, &server, &auth, json!({ "project": project, "kind": "edit", "text": target }));
+            let _ = post("/api/events", json!({ "project": project, "kind": "edit", "text": target }));
         }
         "Stop" => {
             let text = last_reply(input["transcript_path"].as_str()?)?;
-            post(&agent, &server, &auth, json!({ "project": project, "kind": "reply", "text": text }));
+            let _ = post("/api/events", json!({ "project": project, "kind": "reply", "text": text }));
         }
         _ => {}
     }
     Some(())
 }
 
-fn post(agent: &ureq::Agent, server: &str, auth: &str, body: Value) {
-    let _ = agent
-        .post(&format!("{server}/api/events"))
-        .set("authorization", auth)
-        .set("content-type", "application/json")
-        .send_string(&body.to_string());
+/// "baton job Scripting", "/baton job: Scripting" or "baton job none" → the job name ("" clears).
+fn job_pick(prompt: &str) -> Option<String> {
+    let p = prompt.trim();
+    let p = p.strip_prefix('/').unwrap_or(p);
+    let lower = p.to_lowercase();
+    let rest = lower.strip_prefix("baton")?;
+    if !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let after = rest.trim_start().strip_prefix("job")?;
+    if !(after.is_empty() || after.starts_with(char::is_whitespace) || after.starts_with(':')) {
+        return None;
+    }
+    // Keep the user's casing: cut the same number of bytes from the original (ASCII prefix).
+    let cut = p.len().checked_sub(after.len())?;
+    Some(p.get(cut..)?.trim_start_matches(|c: char| c == ':' || c.is_whitespace()).trim().to_string())
 }
 
 fn inject(event: &str, text: &str) {
