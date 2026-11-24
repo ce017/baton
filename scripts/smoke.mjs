@@ -225,5 +225,17 @@ const boeList = (await rest('GET', `${P}/jobs`, boe.key)).data;
 check('jobs: people only see their own jobs and chats', boeList.jobs?.length === 0 && boeList.chats?.length === 0, JSON.stringify(boeList));
 }
 
+// ---- desktop notifications feed
+{
+  const start = (await rest('GET', `${P}/notices`, ceo.key)).data;
+  check('notices: first call only gives the starting point', typeof start.top === 'number' && start.messages.length === 0, JSON.stringify(start));
+  await rest('POST', `${P}/post`, boe.key, { to: 'everyone', kind: 'question', text: 'Notice me?' });
+  await rest('POST', `${P}/post`, ceo.key, { to: 'everyone', kind: 'fyi', text: 'My own note' });
+  const next = (await rest('GET', `${P}/notices?after=${start.top}`, ceo.key)).data;
+  check("notices: new messages for you arrive, your own don't", next.messages.length === 1 && next.messages[0].text === 'Notice me?', JSON.stringify(next));
+  const again = (await rest('GET', `${P}/notices?after=${start.top}`, ceo.key)).data;
+  check('notices: reading them marks nothing read', again.messages.length === 1, JSON.stringify(again));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);

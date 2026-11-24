@@ -21,29 +21,54 @@ fn handle(event: &str, input: &Value) -> Option<()> {
     let key = cfg["agentKey"].as_str()?.to_string();
     let cwd = input["cwd"].as_str().unwrap_or("");
     let project = project_for(&cfg, cwd);
-    let q = project.as_deref().map(|p| format!("?project={}", urlencode(p))).unwrap_or_default();
+    let q = project
+        .as_deref()
+        .map(|p| format!("?project={}", urlencode(p)))
+        .unwrap_or_default();
     let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).build();
     let auth = format!("Bearer {key}");
     // The session id lets each Claude chat carry its own job ("ceo's Scripting Claude").
     let session = input["session_id"].as_str().unwrap_or("").to_string();
     let prompt = input["prompt"].as_str().unwrap_or("");
-    let title: String = prompt.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect();
+    let title: String = prompt
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(80)
+        .collect();
     let with = |r: ureq::Request| {
         let mut r = r.set("authorization", &auth);
         if !session.is_empty() {
-            r = r.set("x-baton-session", &session).set("x-baton-cwd", &urlencode(&cwd.chars().take(200).collect::<String>()));
+            r = r.set("x-baton-session", &session).set(
+                "x-baton-cwd",
+                &urlencode(&cwd.chars().take(200).collect::<String>()),
+            );
         }
         if event == "UserPromptSubmit" && !title.is_empty() {
             r = r.set("x-baton-title", &urlencode(&title));
         }
         r
     };
-    let post = |path: &str, body: Value| with(agent.post(&format!("{server}{path}"))).set("content-type", "application/json").send_string(&body.to_string());
+    let post = |path: &str, body: Value| {
+        with(agent.post(&format!("{server}{path}")))
+            .set("content-type", "application/json")
+            .send_string(&body.to_string())
+    };
 
     match event {
         "SessionStart" => {
-            let brief = with(agent.get(&format!("{server}/api/brief{q}"))).call().ok()?.into_string().ok()?;
-            inject(event, &format!("{brief}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)"));
+            let brief = with(agent.get(&format!("{server}/api/brief{q}")))
+                .call()
+                .ok()?
+                .into_string()
+                .ok()?;
+            inject(
+                event,
+                &format!(
+                    "{brief}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)"
+                ),
+            );
         }
         "UserPromptSubmit" => {
             if let (Some(name), false) = (job_pick(prompt), session.is_empty()) {
@@ -51,43 +76,78 @@ fn handle(event: &str, input: &Value) -> Option<()> {
                 let body = json!({ "project": project, "session": session, "job": if none { Value::Null } else { Value::String(name.clone()) } });
                 let text = match post("/api/chat-job", body) {
                     Ok(res) => {
-                        let r: Value = res.into_string().ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}));
+                        let r: Value = res
+                            .into_string()
+                            .ok()
+                            .and_then(|t| serde_json::from_str(&t).ok())
+                            .unwrap_or_else(|| json!({}));
                         match r["job"].as_str() {
                             Some(job) => {
                                 let user = cfg["user"].as_str().unwrap_or("your");
-                                let mut lines = vec![format!("(Baton) This chat is now {user}'s {job} Claude. Tell the user in one line.")];
-                                if let Some(i) = r["instructions"].as_str().filter(|s| !s.is_empty()) {
+                                let mut lines = vec![format!(
+                                    "(Baton) This chat is now {user}'s {job} Claude. Tell the user in one line."
+                                )];
+                                if let Some(i) =
+                                    r["instructions"].as_str().filter(|s| !s.is_empty())
+                                {
                                     lines.push(format!("Job instructions: {i}"));
                                 }
-                                let labels: Vec<&str> = r["labels"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_default();
+                                let labels: Vec<&str> = r["labels"]
+                                    .as_array()
+                                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                                    .unwrap_or_default();
                                 if !labels.is_empty() {
-                                    lines.push(format!("Take to-dos labelled: {}.", labels.join(", ")));
+                                    lines.push(format!(
+                                        "Take to-dos labelled: {}.",
+                                        labels.join(", ")
+                                    ));
                                 }
-                                lines.push(format!("Pass job: \"{job}\" in every baton_* tool call."));
+                                lines.push(format!(
+                                    "Pass job: \"{job}\" in every baton_* tool call."
+                                ));
                                 lines.join("\n")
                             }
-                            None => "(Baton) This chat has no job now. Tell the user in one line.".to_string(),
+                            None => "(Baton) This chat has no job now. Tell the user in one line."
+                                .to_string(),
                         }
                     }
                     Err(ureq::Error::Status(_, res)) => {
-                        let msg = res.into_string().ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v["error"].as_str().map(String::from)).unwrap_or_default();
+                        let msg = res
+                            .into_string()
+                            .ok()
+                            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                            .and_then(|v| v["error"].as_str().map(String::from))
+                            .unwrap_or_default();
                         format!("(Baton) Could not set the job: {msg} Tell the user.")
                     }
-                    Err(_) => "(Baton) Could not reach the Baton server to set the job. Tell the user.".to_string(),
+                    Err(_) => {
+                        "(Baton) Could not reach the Baton server to set the job. Tell the user."
+                            .to_string()
+                    }
                 };
                 inject(event, &text);
                 return Some(());
             }
-            let text = with(agent.get(&format!("{server}/api/hook/inbox{q}"))).call().ok()?.into_string().ok()?;
+            let text = with(agent.get(&format!("{server}/api/hook/inbox{q}")))
+                .call()
+                .ok()?
+                .into_string()
+                .ok()?;
             inject(event, &text);
         }
         "PostToolUse" => {
             let target = edit_target(input, cwd)?;
-            let _ = post("/api/events", json!({ "project": project, "kind": "edit", "text": target }));
+            let _ = post(
+                "/api/events",
+                json!({ "project": project, "kind": "edit", "text": target }),
+            );
         }
         "Stop" => {
             let text = last_reply(input["transcript_path"].as_str()?)?;
-            let _ = post("/api/events", json!({ "project": project, "kind": "reply", "text": text }));
+            let _ = post(
+                "/api/events",
+                json!({ "project": project, "kind": "reply", "text": text }),
+            );
         }
         _ => {}
     }
@@ -109,20 +169,32 @@ fn job_pick(prompt: &str) -> Option<String> {
     }
     // Keep the user's casing: cut the same number of bytes from the original (ASCII prefix).
     let cut = p.len().checked_sub(after.len())?;
-    Some(p.get(cut..)?.trim_start_matches(|c: char| c == ':' || c.is_whitespace()).trim().to_string())
+    Some(
+        p.get(cut..)?
+            .trim_start_matches(|c: char| c == ':' || c.is_whitespace())
+            .trim()
+            .to_string(),
+    )
 }
 
 fn inject(event: &str, text: &str) {
     if text.trim().is_empty() {
         return;
     }
-    let out = json!({ "hookSpecificOutput": { "hookEventName": event, "additionalContext": text } });
+    let out =
+        json!({ "hookSpecificOutput": { "hookEventName": event, "additionalContext": text } });
     let _ = write!(std::io::stdout(), "{out}");
 }
 
 fn urlencode(s: &str) -> String {
     s.bytes()
-        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
         .collect()
 }
 
@@ -137,12 +209,15 @@ fn project_for(cfg: &Value, cwd: &str) -> Option<String> {
     if let Some(dirs) = cfg["dirs"].as_object() {
         for (dir, slug) in dirs {
             let d = norm(dir);
-            if (here == d || here.starts_with(&format!("{d}/"))) && best.as_ref().is_none_or(|(l, _)| d.len() > *l) {
+            if (here == d || here.starts_with(&format!("{d}/")))
+                && best.as_ref().is_none_or(|(l, _)| d.len() > *l)
+            {
                 best = slug.as_str().map(|s| (d.len(), s.to_string()));
             }
         }
     }
-    best.map(|(_, s)| s).or_else(|| cfg["project"].as_str().map(String::from))
+    best.map(|(_, s)| s)
+        .or_else(|| cfg["project"].as_str().map(String::from))
 }
 
 fn edit_target(input: &Value, cwd: &str) -> Option<String> {
@@ -150,8 +225,15 @@ fn edit_target(input: &Value, cwd: &str) -> Option<String> {
     let ti = &input["tool_input"];
     if ["Edit", "Write", "MultiEdit", "NotebookEdit"].contains(&name) {
         let p = ti["file_path"].as_str().or(ti["notebook_path"].as_str())?;
-        let (pn, cn) = (p.replace('\\', "/"), format!("{}/", cwd.replace('\\', "/").trim_end_matches('/')));
-        let rel = if !cwd.is_empty() && pn.to_lowercase().starts_with(&cn.to_lowercase()) { pn[cn.len()..].to_string() } else { pn };
+        let (pn, cn) = (
+            p.replace('\\', "/"),
+            format!("{}/", cwd.replace('\\', "/").trim_end_matches('/')),
+        );
+        let rel = if !cwd.is_empty() && pn.to_lowercase().starts_with(&cn.to_lowercase()) {
+            pn[cn.len()..].to_string()
+        } else {
+            pn
+        };
         return Some(rel);
     }
     if name.starts_with("mcp__") && !name.starts_with("mcp__baton__") {
@@ -159,8 +241,12 @@ fn edit_target(input: &Value, cwd: &str) -> Option<String> {
         let where_ = ti.as_object().and_then(|o| {
             o.iter().find_map(|(k, v)| {
                 let k = k.to_lowercase();
-                let hit = ["path", "instance", "script", "target", "file", "name"].iter().any(|w| k.contains(w));
-                v.as_str().filter(|s| hit && s.len() < 160).map(String::from)
+                let hit = ["path", "instance", "script", "target", "file", "name"]
+                    .iter()
+                    .any(|w| k.contains(w));
+                v.as_str()
+                    .filter(|s| hit && s.len() < 160)
+                    .map(String::from)
             })
         });
         return Some(match where_ {
@@ -184,14 +270,25 @@ fn last_reply(path: &str) -> Option<String> {
         if !line.contains("\"assistant\"") {
             continue;
         }
-        let Ok(entry) = serde_json::from_str::<Value>(line) else { continue };
-        let msg = if entry["message"].is_object() { &entry["message"] } else { &entry };
+        let Ok(entry) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let msg = if entry["message"].is_object() {
+            &entry["message"]
+        } else {
+            &entry
+        };
         if msg["role"] != "assistant" && entry["type"] != "assistant" {
             continue;
         }
         let joined = match &msg["content"] {
             Value::String(s) => s.clone(),
-            Value::Array(parts) => parts.iter().filter(|p| p["type"] == "text").filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join(" "),
+            Value::Array(parts) => parts
+                .iter()
+                .filter(|p| p["type"] == "text")
+                .filter_map(|p| p["text"].as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
             _ => String::new(),
         };
         let t = joined.trim();

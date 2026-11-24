@@ -204,11 +204,15 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
     if (what === 'members' && method === 'GET') return json(await obj.members(actor));
+    if (what === 'notices' && method === 'GET') {
+      const after = Number(url.searchParams.get('after') ?? -1);
+      return json(await obj.notices(actor, Number.isFinite(after) ? after : -1));
+    }
     if (what === 'jobs' && method === 'GET') return json(await obj.jobs(actor));
     if (what === 'jobs' && method === 'POST') {
       const b = await body<{ id?: string; name?: string; instructions?: string; labels?: string[]; delete?: string }>(req);

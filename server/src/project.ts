@@ -987,6 +987,21 @@ export class ProjectDO extends DurableObject<unknown> {
     return rows;
   }
 
+  /** New messages for this person (to them or everyone, not from them or their Claudes), for desktop notifications. Marks nothing read. */
+  async notices(actor: Actor, after: number) {
+    this.need(actor, 'viewer');
+    const top = this.sql.exec<{ s: number | null }>('SELECT MAX(seq) AS s FROM messages').toArray()[0]?.s ?? 0;
+    if (after < 0) return { top, messages: [] }; // first call: just the starting point
+    const messages = this.sql
+      .exec<{ seq: number; from_label: string; to_label: string; kind: string; text: string; at: number }>(
+        "SELECT seq, from_label, to_label, kind, text, at FROM messages WHERE seq > ? AND from_user != ? AND (to_id = '*' OR to_id = ?) ORDER BY seq LIMIT 20",
+        after, actor.userId, actor.userId,
+      )
+      .toArray()
+      .map((m) => ({ ...m, text: clip(m.text, 200) }));
+    return { top, messages };
+  }
+
   async issueTicket(actor: Actor): Promise<string> {
     this.need(actor, 'viewer');
     const ticket = crypto.randomUUID();
