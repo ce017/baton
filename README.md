@@ -9,7 +9,15 @@ A shared workspace for people **and their Claudes**. When your Claude hits a usa
 - **Roles.** Owner, Admin, Member (read + post/comment/lock) and Viewer.
 - **Cheap on tokens.** The session brief is ~300–1,000 tokens. The bookkeeping runs in hooks, outside the model, and messages are injected only when there are some.
 
-Status: **M1**: server, 12 MCP tools, Claude Code hooks, CLI, and the desktop app (Live handoffs, Pages vault, Tasks board, Inbox, People & Claude with one-click Connect). Boards and Obsidian sync come next (see [PLAN.md](PLAN.md)).
+## Get started
+
+1. Download **Baton for Windows** from [Releases](https://github.com/ce017/baton/releases/latest), or just use it in the browser at https://baton.baton-server.workers.dev.
+2. Open the invite link your team sent you (or sign in with Google), pick a name, and you're in.
+3. In **Team**, press **Connect to Claude Code**. Your Claude now gets the brief, messages and to-dos on its own.
+
+Want to invite people? In **Team** make an invite link (choose the role, how many uses and how long it lasts) or add them by email. Baton tells you when a new version is out.
+
+Also in v0.2: Claude jobs (one job per Claude chat), Wake (start a teammate's Claude when they're away, opt-in), Obsidian sync, Windows notifications and a tray icon.
 
 ## Desktop app
 
