@@ -448,3 +448,4 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .wakestate { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 12.5px; margin-top: 10px; }
 .wakebox { display: grid; gap: 8px; }
 .wakestate { align-items: flex-start; } .wakestate svg { flex: none; margin-top: 2px; }
+.spin { animation: spin 0.9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }

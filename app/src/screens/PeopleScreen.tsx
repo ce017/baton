@@ -7,6 +7,7 @@ import { Avatar, DrawCheck, Skel, useToast } from '../ui.tsx';
 import { JobsSection } from './JobsSection.tsx';
 import { NotifySettings } from './Notifier.tsx';
 import { WakeSettings } from './Waker.tsx';
+import { ObsidianSettings } from './Obsidian.tsx';
 import { CreateProject, useProject, useProjectQuery } from './Shell.tsx';
 
 const ROLE_HELP: Record<Role, string> = {
@@ -38,6 +39,7 @@ export function PeopleScreen(_: { onCreateProject: () => void }) {
         {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
         <Skills />
         <WakeSettings />
+        <ObsidianSettings key={overview?.project.slug} />
         <NotifySettings />
       </div>
     </div>

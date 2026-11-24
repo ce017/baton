@@ -14,7 +14,8 @@
     "dev": "npm run dev -w server",
     "test": "node scripts/smoke.mjs",
     "typecheck": "npm run typecheck -w server",
-    "app": "npm run dev -w app"
+    "app": "npm run dev -w app",
+    "test:obsidian": "cd app && npx esbuild src/lib/obsidian.ts --bundle --format=esm --alias:@tauri-apps/api/core=../scripts/tauri-stub.mjs --outfile=../scripts/.local/obsidian.bundle.mjs --log-level=warning && cd .. && node scripts/obsidian-test.ts"
   },
   "allowScripts": {
     "workerd@1.20261123.1": true,

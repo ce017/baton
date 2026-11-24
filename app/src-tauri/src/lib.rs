@@ -302,6 +302,66 @@ fn install_skills(project: String, bundle: String) -> Result<String, String> {
     Ok(msg)
 }
 
+#[derive(Serialize)]
+struct VaultFile {
+    rel: String,
+    content: String,
+}
+
+/// A note path inside the vault folder; refuses absolute paths and "..".
+fn vault_path(folder: &str, rel: &str) -> Result<PathBuf, String> {
+    let root = PathBuf::from(folder);
+    if folder.trim().is_empty() || !root.is_dir() {
+        return Err(format!("The Obsidian folder \"{folder}\" doesn't exist on this PC."));
+    }
+    let rel = rel.replace('\\', "/");
+    if rel.starts_with('/') || rel.contains(':') || rel.split('/').any(|p| p == ".." || p.is_empty()) {
+        return Err(format!("Refused an unsafe note path: {rel}"));
+    }
+    Ok(root.join(rel))
+}
+
+/// Obsidian sync: every .md note under the folder (skips .obsidian, .trash and other dot folders).
+#[tauri::command]
+fn vault_scan(folder: String) -> Result<Vec<VaultFile>, String> {
+    let root = PathBuf::from(&folder);
+    if folder.trim().is_empty() || !root.is_dir() {
+        return Err(format!("The Obsidian folder \"{folder}\" doesn't exist on this PC."));
+    }
+    let mut out = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            if p.is_dir() {
+                stack.push(p);
+            } else if name.to_lowercase().ends_with(".md") && e.metadata().map(|m| m.len() < 512 * 1024).unwrap_or(false) {
+                if let (Ok(content), Ok(rel)) = (fs::read_to_string(&p), p.strip_prefix(&root)) {
+                    out.push(VaultFile { rel: rel.to_string_lossy().replace('\\', "/"), content });
+                }
+            }
+            if out.len() >= 2000 {
+                return Ok(out);
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn vault_write(folder: String, rel: String, content: String) -> Result<(), String> {
+    let path = vault_path(&folder, &rel)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, content).map_err(|e| e.to_string())
+}
+
 /// Wake: runs this PC's Claude headless for a teammate's request. The app only calls it when the
 /// person turned Wake on, within their daily limit. Read-only tools unless they allowed edits.
 #[tauri::command]
@@ -394,7 +454,9 @@ pub fn run() {
             disconnect_claude,
             install_skills,
             set_close_to_tray,
-            run_wake
+            run_wake,
+            vault_scan,
+            vault_write
         ])
         .run(tauri::generate_context!())
         .expect("error while running Baton");

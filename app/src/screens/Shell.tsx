@@ -10,6 +10,7 @@ import { BoardScreen } from './BoardScreen.tsx';
 import { MessagesScreen } from './MessagesScreen.tsx';
 import { Notifier } from './Notifier.tsx';
 import { Waker } from './Waker.tsx';
+import { ObsidianSync } from './Obsidian.tsx';
 import { PagesScreen } from './PagesScreen.tsx';
 import { PeopleScreen } from './PeopleScreen.tsx';
 
@@ -173,6 +174,7 @@ export function Shell() {
           <ProjectCtx.Provider value={state}>
             <Notifier />
             <Waker />
+            <ObsidianSync />
             {route.view === 'board' && <BoardScreen />}
             {route.view === 'notes' && <div className="pagewrap" style={{ display: 'flex', flexDirection: 'column' }}><PagesScreen /></div>}
             {route.view === 'messages' && <MessagesScreen />}
