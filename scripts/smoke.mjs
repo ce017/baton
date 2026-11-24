@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 const SERVER = process.argv[2] ?? 'http://localhost:8787';
-const ADMIN = /ADMIN_TOKEN=(\S+)/.exec(readFileSync(new URL('../server/.dev.vars', import.meta.url), 'utf8'))?.[1];
+const ADMIN = process.env.BATON_ADMIN || /ADMIN_TOKEN=(\S+)/.exec(readFileSync(new URL('../server/.dev.vars', import.meta.url), 'utf8'))?.[1];
 const tag = Math.random().toString(36).slice(2, 7);
 let failed = 0;
 
