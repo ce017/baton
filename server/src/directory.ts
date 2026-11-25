@@ -43,6 +43,7 @@ export class DirectoryDO extends DurableObject<unknown> {
         user_id TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY(user_id, project_id));
     `);
     this.ensureAuthTables();
+    this.ensureProfileTables();
   }
 
   async createUser(rawName: string): Promise<{ userId: string; name: string; key: string }> {
@@ -371,5 +372,86 @@ export class DirectoryDO extends DurableObject<unknown> {
     if (!r.key) return null;
     this.sql.exec('DELETE FROM login_requests WHERE id = ?', id);
     return { key: r.key, user: r.user_name ?? '' };
+  }
+
+  // ---------------------------------------------------------------- profiles and badges
+  private ensureProfileTables() {
+    try {
+      this.sql.exec('ALTER TABLE users ADD COLUMN profile TEXT');
+    } catch {}
+    this.sql.exec('CREATE TABLE IF NOT EXISTS badges(user_id TEXT NOT NULL, badge TEXT NOT NULL, label TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, badge))');
+  }
+
+  /** Badges are given by this server: earned ones are worked out here, special ones only its host can grant. */
+  private badgesOf(userId: string): { id: string; label: string; kind: 'earned' | 'host' }[] {
+    const out: { id: string; label: string; kind: 'earned' | 'host' }[] = [];
+    const u = this.sql.exec<{ created_at: number }>('SELECT created_at FROM users WHERE id = ?', userId).toArray()[0];
+    if (!u) return out;
+    if (this.sql.exec('SELECT 1 FROM projects WHERE owner_id = ? LIMIT 1', userId).toArray().length) out.push({ id: 'founder', label: 'Project founder', kind: 'earned' });
+    if (this.sql.exec('SELECT 1 FROM agents WHERE user_id = ? LIMIT 1', userId).toArray().length) out.push({ id: 'claude', label: 'Works with a Claude', kind: 'earned' });
+    if (this.sql.exec('SELECT 1 FROM emails WHERE user_id = ? LIMIT 1', userId).toArray().length) out.push({ id: 'verified', label: 'Verified email', kind: 'earned' });
+    if (u.created_at < Date.UTC(2027, 0, 1)) out.push({ id: 'early', label: 'Early tester', kind: 'earned' });
+    for (const b of this.sql.exec<{ badge: string; label: string }>('SELECT badge, label FROM badges WHERE user_id = ? ORDER BY at', userId).toArray()) {
+      out.push({ id: b.badge, label: b.label, kind: 'host' });
+    }
+    return out;
+  }
+
+  async profileOf(userId: string) {
+    const u = this.sql.exec<{ name: string; profile: string | null }>('SELECT name, profile FROM users WHERE id = ?', userId).toArray()[0];
+    if (!u) return null;
+    let p: { display?: string; about?: string; color?: string; status?: string } = {};
+    try {
+      p = JSON.parse(u.profile ?? '{}');
+    } catch {}
+    return { name: u.name, display: p.display ?? '', about: p.about ?? '', color: p.color ?? '', status: p.status ?? '', badges: this.badgesOf(userId) };
+  }
+
+  async profilesByNames(names: string[]) {
+    const out: Record<string, Awaited<ReturnType<DirectoryDO['profileOf']>>> = {};
+    for (const n of names.slice(0, 200)) {
+      const r = this.sql.exec<{ id: string }>('SELECT id FROM users WHERE name = ?', n).toArray()[0];
+      if (r) out[n] = await this.profileOf(r.id);
+    }
+    return out;
+  }
+
+  async setProfile(userId: string, p: { display?: string; about?: string; color?: string; status?: string }) {
+    const clean = (s: unknown, n: number) => (typeof s === 'string' ? s.trim().slice(0, n) : '');
+    const color = clean(p.color, 9);
+    const next = {
+      display: clean(p.display, 40),
+      about: clean(p.about, 280),
+      status: clean(p.status, 80),
+      color: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '',
+    };
+    this.sql.exec('UPDATE users SET profile = ? WHERE id = ?', JSON.stringify(next), userId);
+    return this.profileOf(userId);
+  }
+
+  /** Only the server's host (ADMIN_TOKEN) can hand out special badges. */
+  async grantBadge(name: string, badge: string, label: string, remove = false) {
+    const u = await this.findUser(name);
+    if (!u) throw new BatonError(`No person called "${name}".`, 404);
+    const id = badge.trim().toLowerCase().slice(0, 32);
+    if (!id) throw new BatonError('Give the badge an id.');
+    if (remove) this.sql.exec('DELETE FROM badges WHERE user_id = ? AND badge = ?', u.userId, id);
+    else this.sql.exec('INSERT OR REPLACE INTO badges(user_id, badge, label, at) VALUES (?, ?, ?, ?)', u.userId, id, label.trim().slice(0, 40) || id, Date.now());
+    return this.profileOf(u.userId);
+  }
+
+  /** Deletes a person: keys, Claudes, emails, profile. Returns the projects they owned (to delete) and joined (to leave). */
+  async deleteUser(userId: string): Promise<{ owned: string[]; joined: string[] }> {
+    const owned = this.sql.exec<{ id: string }>('SELECT id FROM projects WHERE owner_id = ?', userId).toArray().map((r) => r.id);
+    const joined = this.sql.exec<{ project_id: string }>('SELECT project_id FROM user_projects WHERE user_id = ?', userId).toArray().map((r) => r.project_id).filter((id) => !owned.includes(id));
+    for (const id of owned) {
+      this.sql.exec('DELETE FROM user_projects WHERE project_id = ?', id);
+      this.sql.exec('DELETE FROM invites WHERE project_id = ?', id);
+      this.sql.exec('DELETE FROM email_invites WHERE project_id = ?', id);
+      this.sql.exec('DELETE FROM projects WHERE id = ?', id);
+    }
+    for (const t of ['user_projects', 'agents', 'sessions', 'emails', 'login_links', 'badges']) this.sql.exec(`DELETE FROM ${t} WHERE user_id = ?`, userId);
+    this.sql.exec('DELETE FROM users WHERE id = ?', userId);
+    return { owned, joined };
   }
 }

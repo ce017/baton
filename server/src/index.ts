@@ -154,8 +154,29 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json(await dir.createUser(b.name ?? ''));
   }
 
+  if (path === '/api/admin/badges' && method === 'POST') {
+    if (!env.ADMIN_TOKEN || bearer(req) !== env.ADMIN_TOKEN) throw new BatonError('Wrong admin token.', 401);
+    const b = await body<{ user: string; badge: string; label?: string; remove?: boolean }>(req);
+    return json(await dir.grantBadge(b.user ?? '', b.badge ?? '', b.label ?? '', !!b.remove));
+  }
+
   const who = await identify(req, env);
   const actor = toActor(who);
+
+  if (path === '/api/me/profile' && method === 'GET') return json(await dir.profileOf(who.userId));
+  if (path === '/api/me/profile' && method === 'POST') {
+    if (who.agentId) throw new BatonError('Use your own sign-in to edit your profile.', 403);
+    return json(await dir.setProfile(who.userId, await body(req)));
+  }
+  if (path === '/api/me/delete' && method === 'POST') {
+    if (who.agentId) throw new BatonError('Use your own sign-in to delete your account.', 403);
+    const b = await body<{ confirm?: string }>(req);
+    if ((b.confirm ?? '').trim().toLowerCase() !== who.userName) throw new BatonError('Type your name to confirm.');
+    const r = await dir.deleteUser(who.userId);
+    for (const id of r.owned) await projectObj(env, id).wipe();
+    for (const id of r.joined) await projectObj(env, id).dropMember(who.userId);
+    return json({ ok: true, deletedProjects: r.owned.length });
+  }
 
   if (path === '/api/me' && method === 'GET') {
     return json({
@@ -224,13 +245,14 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites|profiles)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
     const inv = await projectInviteRoutes(req, url, what, who, ref, deps);
     if (inv) return inv;
     if (what === 'members' && method === 'GET') return json(await obj.members(actor));
+    if (what === 'profiles' && method === 'GET') return json(await dir.profilesByNames((await obj.members(actor)).map((m) => m.name)));
     if (what === 'wakes' && method === 'GET') return json(await obj.wakes(actor));
     if (what === 'wake' && method === 'POST') return json(await obj.wake(actor, await body<{ to: string; text: string; task?: string }>(req)));
     if (what === 'wake-opt' && method === 'POST') return json(await obj.setWakeOpt(actor, !!(await body<{ enabled: boolean }>(req)).enabled));

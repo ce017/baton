@@ -38,8 +38,9 @@ export interface WriteArgs {
 }
 
 export interface TaskArgs {
-  action: 'list' | 'add' | 'update';
+  action: 'list' | 'get' | 'add' | 'update' | 'comment' | 'delete';
   id?: string;
+  text?: string;
   title?: string;
   status?: TaskStatus;
   assignee?: string;
@@ -190,6 +191,17 @@ export class ProjectDO extends DurableObject<unknown> {
    * Owners manage everyone; admins manage members and viewers but never admins.
    * `role: 'none'` removes the person.
    */
+  /** The person deleted their account: they leave this project. */
+  async dropMember(userId: string): Promise<void> {
+    this.sql.exec('DELETE FROM members WHERE user_id = ?', userId);
+    this.broadcast('members');
+  }
+
+  /** The owner deleted their account: the whole project goes with it. */
+  async wipe(): Promise<void> {
+    await this.ctx.storage.deleteAll();
+  }
+
   /** Joins someone through an invite link or an email invite (no actor: the invite is the permission). Never lowers a role. */
   async joinMember(target: { userId: string; name: string }, role: Role): Promise<Role> {
     if (role === 'owner') role = 'admin';
@@ -621,12 +633,58 @@ export class ProjectDO extends DurableObject<unknown> {
       if (!rows.length) return 'No open tasks.';
       return rows.map((t) => `${this.formatTask(t)}${t.notes ? `\n    ${clip(t.notes, 200)}` : ''}`).join('\n');
     }
-    this.need(actor, 'admin');
+    const taskId = (a.id ?? '').toUpperCase().replace(/^(\d+)$/, 'T-$1');
+    if (a.action === 'get') {
+      this.need(actor, 'member');
+      this.seen(actor);
+      const t = this.sql
+        .exec<{ id: string; title: string; status: string; assignee: string; area: string; notes: string; updated_by_name: string; updated_at: number }>(
+          'SELECT id, title, status, assignee, area, notes, updated_by_name, updated_at FROM tasks WHERE id = ?', taskId,
+        )
+        .toArray()[0];
+      if (!t) throw new BatonError(`No task ${a.id ?? ''}.`, 404);
+      const now0 = Date.now();
+      const cs = this.sql
+        .exec<{ by_name: string; text: string; at: number }>('SELECT by_name, text, at FROM comments WHERE target = ? ORDER BY at', t.id)
+        .toArray();
+      return [
+        this.formatTask(t),
+        `Last change by ${t.updated_by_name}, ${ago(t.updated_at, now0)}.`,
+        t.notes ? `Notes:\n${t.notes}` : 'No notes.',
+        cs.length ? `Comments:\n${cs.map((c) => `- ${c.by_name}, ${ago(c.at, now0)}: ${c.text}`).join('\n')}` : 'No comments yet.',
+        UNTRUSTED,
+      ].join('\n');
+    }
+    if (a.action === 'comment') {
+      if (!taskId) throw new BatonError('Say which task, e.g. id "T-3".');
+      return this.board(actor, { action: 'comment', target: taskId, text: a.text ?? a.notes ?? '' });
+    }
+    const role = this.need(actor, 'member');
+    const admin = role === 'owner' || role === 'admin';
     this.seen(actor);
     const now = Date.now();
     const label = actorLabel(actor);
     if (a.status && !TASK_STATUSES.includes(a.status)) throw new BatonError('Status is todo, doing, blocked or done.');
     assertNoSecret(a.title, a.notes, a.area, a.assignee);
+    if (a.action === 'delete') {
+      if (!admin) throw new BatonError('Only owners and admins can delete tasks.', 403);
+      const t = this.sql.exec<{ title: string }>('SELECT title FROM tasks WHERE id = ?', taskId).toArray()[0];
+      if (!t) throw new BatonError(`No task ${a.id ?? ''}.`, 404);
+      this.sql.exec('DELETE FROM tasks WHERE id = ?', taskId);
+      this.sql.exec('DELETE FROM comments WHERE target = ?', taskId);
+      this.log(actor, 'task', `deleted ${taskId} ${t.title}`, taskId);
+      return `Deleted ${taskId}.`;
+    }
+    if (!admin) {
+      // Members (and their Claudes) may add to-dos for themselves and update the ones that are theirs or free.
+      const mine = (who: string) => who.trim().toLowerCase().replace(/'s\b.*$/, '') === actor.userName.toLowerCase();
+      if (a.action === 'add' && a.assignee && !mine(a.assignee)) throw new BatonError('Members can only add to-dos for themselves or their Claudes.', 403);
+      if (a.action === 'update') {
+        const cur = this.sql.exec<{ assignee: string }>('SELECT assignee FROM tasks WHERE id = ?', taskId).toArray()[0];
+        if (cur && cur.assignee && !mine(cur.assignee)) throw new BatonError(`${taskId} belongs to ${cur.assignee}; only they or an admin can change it. Comment on it instead.`, 403);
+        if (a.assignee && !mine(a.assignee)) throw new BatonError('Members can only assign to-dos to themselves or their Claudes.', 403);
+      }
+    }
     if (a.action === 'add') {
       const title = clip(a.title, 200);
       if (!title) throw new BatonError('A task needs a title.');

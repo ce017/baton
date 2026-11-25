@@ -193,10 +193,12 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
     'baton_task',
     {
       title: 'Tasks',
-      description: 'List, add or update tasks (kanban: todo, doing, blocked, done). Adding/updating is owner/admin only.',
+      description:
+        'The to-do board (todo, doing, blocked, done). list: open to-dos. get: one to-do with its notes and comments. add / update: create or change one (members and their Claudes: only to-dos for themselves). comment: leave a note on a to-do for the team. delete: owners/admins.',
       inputSchema: z.object({
-        action: z.enum(['list', 'add', 'update']),
-        id: z.string().optional().describe('Task id for update, e.g. "T-3"'),
+        action: z.enum(['list', 'get', 'add', 'update', 'comment', 'delete']),
+        id: z.string().optional().describe('Task id for get/update/comment/delete, e.g. "T-3"'),
+        text: z.string().optional().describe('The comment, for action comment'),
         title: z.string().optional(),
         status: z.enum(['todo', 'doing', 'blocked', 'done']).optional(),
         assignee: z.string().optional().describe('A person or Claude, e.g. "boe" or "ceo\'s Claude"'),

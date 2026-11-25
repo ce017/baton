@@ -305,5 +305,47 @@ check('jobs: people only see their own jobs and chats', boeList.jobs?.length ===
   check('config: tells the app whether Google sign-in is on', typeof cfgRes.google === 'boolean', JSON.stringify(cfgRes));
 }
 
+// ---- Claude to-dos, profiles, badges, deleting an account
+{
+  const added = await c.call('baton_task', { project: slug, action: 'add', title: 'Claude-made to-do', assignee: `${ceo.name}'s Claude` });
+  const tid = /T-\d+/.exec(added.text)?.[0];
+  check('claude tasks: a Claude adds a to-do', !!tid, added.text);
+  const com = await c.call('baton_task', { project: slug, action: 'comment', id: tid, text: 'Started on the receipt part.' });
+  check('claude tasks: a Claude comments on a to-do', !com.isError, com.text);
+  const got = await c.call('baton_task', { project: slug, action: 'get', id: tid });
+  check('claude tasks: get shows notes and comments', got.text.includes('Started on the receipt part.') && got.text.includes(tid), got.text);
+  const lu = await mcp(lucasA, false);
+  const luAdd = await lu.call('baton_task', { project: slug, action: 'add', title: "Lucas's own to-do", assignee: `${lucas.name}'s Claude` });
+  const lid = /T-\d+/.exec(luAdd.text)?.[0];
+  check("claude tasks: a member's Claude adds a to-do for itself", !!lid, luAdd.text);
+  const luMove = await lu.call('baton_task', { project: slug, action: 'update', id: lid, status: 'doing' });
+  check("claude tasks: and moves its own to-do", !luMove.isError, luMove.text);
+  const luOther = await lu.call('baton_task', { project: slug, action: 'update', id: tid, status: 'done' });
+  check("claude tasks: but not someone else's", luOther.isError, luOther.text);
+  const luDel = await lu.call('baton_task', { project: slug, action: 'delete', id: lid });
+  check('claude tasks: members cannot delete', luDel.isError, luDel.text);
+  const del = await c.call('baton_task', { project: slug, action: 'delete', id: lid });
+  check('claude tasks: owners delete to-dos', !del.isError && del.text.includes('Deleted'), del.text);
+
+  const prof = await rest('POST', '/api/me/profile', ceo.key, { display: 'Ceo', about: 'Makes Roll a Fish', color: '#5b8def', status: 'Building' });
+  check('profiles: set your own profile', prof.data.display === 'Ceo' && prof.data.color === '#5b8def', JSON.stringify(prof.data));
+  const ps = (await rest('GET', `${P}/profiles`, boe.key)).data;
+  check('profiles: teammates see it, with earned badges', ps[ceo.name]?.about === 'Makes Roll a Fish' && ps[ceo.name].badges.some((b) => b.id === 'founder'), JSON.stringify(ps[ceo.name]));
+  const fake = await rest('POST', '/api/admin/badges', ceo.key, { user: ceo.name, badge: 'staff', label: 'Staff' });
+  check('badges: people cannot give themselves badges', fake.status === 401, JSON.stringify(fake.data));
+  const real = await rest('POST', '/api/admin/badges', ADMIN, { user: boe.name, badge: 'tester', label: 'Tester' });
+  check("badges: the server's host can", real.data.badges?.some((b) => b.id === 'tester' && b.kind === 'host'), JSON.stringify(real.data));
+
+  const temp = await mk('temp');
+  await rest('POST', '/api/projects', temp.key, { slug: `tmp${tag}`, name: 'Temp' });
+  await rest('POST', `${P}/members`, ceo.key, { user: temp.name, role: 'viewer' });
+  const wrong = await rest('POST', '/api/me/delete', temp.key, { confirm: 'nope' });
+  check('delete account: needs your name to confirm', wrong.status === 400, JSON.stringify(wrong.data));
+  const gone = await rest('POST', '/api/me/delete', temp.key, { confirm: temp.name });
+  const after = await rest('GET', '/api/me', temp.key);
+  const members = (await rest('GET', `${P}/members`, ceo.key)).data;
+  check('delete account: removes the person, their projects and memberships', gone.data.deletedProjects === 1 && after.status === 401 && !members.some((m) => m.name === temp.name), JSON.stringify([gone.data, after.status]));
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed.');
 process.exit(failed ? 1 : 0);
