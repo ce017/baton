@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Select } from '../Select.tsx';
 import { AlarmClock } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { call, isTauri, type Task, tauriInvoke } from '../lib/api.ts';
@@ -244,12 +245,12 @@ export function WakeSettings() {
                 <div className="d">How often it can be woken, and how long each run may go. Runs use your Claude plan.</div>
               </div>
               <div className="ctl">
-                <select className="selectlike" value={p.daily} onChange={(e) => save({ ...p, daily: Number(e.target.value) })} aria-label="Runs per day">
+                <Select className="ghost" value={p.daily} onChange={(e) => save({ ...p, daily: Number(e.target.value) })} aria-label="Runs per day">
                   {[1, 3, 5, 10].map((n) => <option key={n} value={n}>{n} a day</option>)}
-                </select>
-                <select className="selectlike" value={p.maxTurns} onChange={(e) => save({ ...p, maxTurns: Number(e.target.value) })} aria-label="Steps per run">
+                </Select>
+                <Select className="ghost" value={p.maxTurns} onChange={(e) => save({ ...p, maxTurns: Number(e.target.value) })} aria-label="Steps per run">
                   {[10, 30, 60].map((n) => <option key={n} value={n}>{n} steps</option>)}
-                </select>
+                </Select>
               </div>
             </div>
           </>

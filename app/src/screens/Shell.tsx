@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, FileText, KanbanSquare, LogOut, MessageSquare, Moon, Plus, Search, Sun, Users } from 'lucide-react';
+import { FileText, KanbanSquare, Link2, LogOut, MessageSquare, Moon, Plus, Search, Settings, Sun, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import { createContext, type FormEvent, useContext, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../main.tsx';
@@ -13,8 +13,11 @@ import { Waker } from './Waker.tsx';
 import { ObsidianSync } from './Obsidian.tsx';
 import { PagesScreen } from './PagesScreen.tsx';
 import { PeopleScreen } from './PeopleScreen.tsx';
+import { JoinProject, NewProject, Welcome } from './Onboarding.tsx';
+import { SettingsScreen } from './SettingsScreen.tsx';
+import { Select } from '../Select.tsx';
 
-export type View = 'board' | 'notes' | 'messages' | 'team';
+export type View = 'board' | 'notes' | 'messages' | 'team' | 'settings';
 export interface Route {
   view: View;
   page?: string;
@@ -67,6 +70,12 @@ export function Shell() {
   const [route, go] = useState<Route>({ view: 'board' });
   const [palette, setPalette] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [page, setPage] = useState<'new' | 'join' | null>(null);
+  const openProject = async (s: string) => {
+    await update({ project: s });
+    setPage(null);
+    go({ view: 'board' });
+  };
   const [theme, toggleTheme] = useTheme();
   const live = useLive(cfg, slug);
   const overview = useQuery({
@@ -116,22 +125,30 @@ export function Shell() {
           <Skel w={140} h={28} r={7} />
         ) : (
           projects.length > 0 && (
-            <label className="proj">
-              <select value={slug} onChange={(e) => { update({ project: e.target.value }); go({ view: 'board' }); }} aria-label="Project">
-                {projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-              </select>
-              <ChevronDown size={14} />
-            </label>
+            <Select
+              className="proj2"
+              value={slug ?? ''}
+              onChange={(e) => openProject(e.target.value)}
+              aria-label="Project"
+              footer={(close) => (
+                <>
+                  <button type="button" className="menu-item" onClick={() => { close(); setPage('new'); }}><Plus size={14} /> New project</button>
+                  <button type="button" className="menu-item" onClick={() => { close(); setPage('join'); }}><Link2 size={14} /> Join with a link</button>
+                </>
+              )}
+            >
+              {projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+            </Select>
           )
         )}
         {slug && (
           <nav className="tabs2">
             {TABS.map(({ view, label, icon: Icon }) => (
-              <button type="button" key={view} className={`tab2 ${route.view === view ? 'on' : ''}`} onClick={() => go({ view })} aria-current={route.view === view ? 'page' : undefined}>
+              <button type="button" key={view} className={`tab2 ${route.view === view && !page ? 'on' : ''}`} onClick={() => { setPage(null); go({ view }); }} aria-current={route.view === view ? 'page' : undefined}>
                 <Icon size={15} />
                 {label}
                 {view === 'messages' && o?.unread ? <span className="cnt">{o.unread}</span> : null}
-                {route.view === view && <motion.span layoutId="tab-uline" className="uline" transition={{ duration: 0.22, ease: EASE_MOVE }} />}
+                {route.view === view && !page && <motion.span layoutId="tab-uline" className="uline" transition={{ duration: 0.22, ease: EASE_MOVE }} />}
               </button>
             ))}
           </nav>
@@ -158,6 +175,9 @@ export function Shell() {
                 <div style={{ fontWeight: 600 }}>{cfg.user}</div>
                 <div className="faint" style={{ fontSize: 12 }}>{o ? `${o.role} · ${o.project.name}` : cfg.server}</div>
               </div>
+              <button type="button" className="menu-item" disabled={!slug} onClick={() => { setPage(null); go({ view: 'settings' }); setMenu(false); }}>
+                <Settings size={14} /> Settings and profile
+              </button>
               <button type="button" className="menu-item" onClick={() => { toggleTheme(); setMenu(false); }}>
                 {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />} {theme === 'dark' ? 'Light theme' : 'Dark theme'}
               </button>
@@ -169,8 +189,12 @@ export function Shell() {
 
       <UpdateNotice />
       <main className="view">
-        {!slug && !me.isLoading ? (
-          <CreateProject first />
+        {page === 'new' ? (
+          <NewProject onDone={openProject} onCancel={() => setPage(null)} />
+        ) : page === 'join' ? (
+          <JoinProject onDone={openProject} onCancel={() => setPage(null)} />
+        ) : !slug && !me.isLoading ? (
+          <Welcome onCreate={() => setPage('new')} onJoin={() => setPage('join')} />
         ) : state ? (
           <ProjectCtx.Provider value={state}>
             <Notifier />
@@ -179,7 +203,8 @@ export function Shell() {
             {route.view === 'board' && <BoardScreen />}
             {route.view === 'notes' && <div className="pagewrap" style={{ display: 'flex', flexDirection: 'column' }}><PagesScreen /></div>}
             {route.view === 'messages' && <MessagesScreen />}
-            {route.view === 'team' && <div className="pagewrap"><PeopleScreen onCreateProject={() => {}} /></div>}
+            {route.view === 'team' && <div className="pagewrap"><PeopleScreen onCreateProject={() => setPage('new')} /></div>}
+            {route.view === 'settings' && <SettingsScreen />}
             {palette && <Palette onClose={() => setPalette(false)} />}
           </ProjectCtx.Provider>
         ) : null}

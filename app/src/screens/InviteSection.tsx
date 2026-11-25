@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Select } from '../Select.tsx';
 import { Copy, Link2, LogIn, Mail } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { useApp } from '../main.tsx';
@@ -82,15 +83,15 @@ export function InviteSection() {
             <div className="d">Anyone with the link joins {overview?.project.name} with this role, until its uses run out. Viewers can only look.</div>
           </div>
           <div className="ctl">
-            <select className="selectlike" value={role} onChange={(e) => setRole(e.target.value as typeof role)} aria-label="Role">
+            <Select className="ghost" value={role} onChange={(e) => setRole(e.target.value as typeof role)} aria-label="Role">
               {roles.map((r) => <option key={r} value={r}>{ROLES[r]}</option>)}
-            </select>
-            <select className="selectlike" value={uses} onChange={(e) => setUses(Number(e.target.value))} aria-label="Uses">
+            </Select>
+            <Select className="ghost" value={uses} onChange={(e) => setUses(Number(e.target.value))} aria-label="Uses">
               {[1, 5, 10, 25].map((n) => <option key={n} value={n}>{n === 1 ? '1 use' : `${n} uses`}</option>)}
-            </select>
-            <select className="selectlike" value={validDays} onChange={(e) => setValidDays(Number(e.target.value))} aria-label="Valid for">
+            </Select>
+            <Select className="ghost" value={validDays} onChange={(e) => setValidDays(Number(e.target.value))} aria-label="Valid for">
               {[1, 7, 30].map((n) => <option key={n} value={n}>{n === 1 ? '1 day' : `${n} days`}</option>)}
-            </select>
+            </Select>
             <button type="button" className="btn primary sm" onClick={makeLink}>Create link</button>
           </div>
         </div>
@@ -112,9 +113,9 @@ export function InviteSection() {
         <form className="setrow" onSubmit={addEmail}>
           <Mail size={15} className="faint" />
           <input className="input grow" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Add by email, e.g. boe@gmail.com" aria-label="Email" />
-          <select className="selectlike" value={emailRole} onChange={(e) => setEmailRole(e.target.value as typeof emailRole)} aria-label="Role for this email">
+          <Select className="ghost" value={emailRole} onChange={(e) => setEmailRole(e.target.value as typeof emailRole)} aria-label="Role for this email">
             {roles.map((r) => <option key={r} value={r}>{ROLES[r].slice(0, -1)}</option>)}
-          </select>
+          </Select>
           <button className="btn sm" disabled={!email.includes('@')}>Add</button>
         </form>
         {(data.data?.emails ?? []).map((m) => (

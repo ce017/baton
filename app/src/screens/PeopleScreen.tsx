@@ -1,15 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Plug, Plus, Unplug } from 'lucide-react';
+import { Select } from '../Select.tsx';
+import { Download, Plug, Unplug } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call, isTauri, type Role, tauriInvoke, type TreeItem } from '../lib/api.ts';
 import { Avatar, DrawCheck, Skel, useToast } from '../ui.tsx';
-import { JobsSection } from './JobsSection.tsx';
-import { AccountSection, InviteSection } from './InviteSection.tsx';
-import { NotifySettings } from './Notifier.tsx';
-import { WakeSettings } from './Waker.tsx';
-import { ObsidianSettings } from './Obsidian.tsx';
-import { CreateProject, useProject, useProjectQuery } from './Shell.tsx';
+import { InviteSection } from './InviteSection.tsx';
+import { Badges, type Profile } from './SettingsScreen.tsx';
+import { useProject, useProjectQuery } from './Shell.tsx';
 
 const ROLE_HELP: Record<Role, string> = {
   owner: 'Everything, including choosing admins',
@@ -20,30 +18,19 @@ const ROLE_HELP: Record<Role, string> = {
 const ROLE_NAME: Record<Role, string> = { owner: 'Owner', admin: 'Admin', member: 'Member', viewer: 'Viewer' };
 
 export function PeopleScreen(_: { onCreateProject: () => void }) {
-  const { cfg, overview } = useProject();
-  const [newProject, setNewProject] = useState(false);
+  const { overview } = useProject();
   return (
     <div className="pagewrap">
       <div className="setpage">
         <div className="sethead">
           <div className="grow">
             <h1>Team</h1>
-            <p>Who's in this project, what they can do, and your Claude on this PC.</p>
+            <p>Who's in {overview?.project.name ?? 'this project'}, what they can do, and how to invite more people.</p>
           </div>
-          <button type="button" className="btn ghost" onClick={() => setNewProject((v) => !v)}>
-            <Plus size={15} /> New project
-          </button>
         </div>
-        {newProject && <div style={{ marginTop: 16 }}><CreateProject onDone={() => setNewProject(false)} /></div>}
-        <ThisClaude />
-        {cfg.agentKey && <JobsSection />}
         {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
         <InviteSection />
         <Skills />
-        <AccountSection />
-        <WakeSettings />
-        <ObsidianSettings key={overview?.project.slug} />
-        <NotifySettings />
       </div>
     </div>
   );
@@ -51,6 +38,7 @@ export function PeopleScreen(_: { onCreateProject: () => void }) {
 
 function Members() {
   const { cfg, slug, overview } = useProject();
+  const profiles = useProjectQuery<Record<string, Profile | null>>(['profiles'], `/api/projects/${slug}/profiles`);
   const qc = useQueryClient();
   const toast = useToast();
   const [name, setName] = useState('');
@@ -84,17 +72,18 @@ function Members() {
           const editable = canManage && m.role !== 'owner' && (mine === 'owner' || m.role !== 'admin') && m.name !== cfg.user;
           return (
             <div key={m.name} className="setrow">
-              <Avatar label={m.name} />
+              <Avatar label={profiles.data?.[m.name]?.display || m.name} color={profiles.data?.[m.name]?.color} />
               <div className="tx">
-                <div className="t">{m.name}{m.name === cfg.user && <span className="faint" style={{ fontWeight: 400 }}>you</span>}</div>
+                <div className="t">{profiles.data?.[m.name]?.display || m.name}{profiles.data?.[m.name]?.display && <span className="faint" style={{ fontWeight: 400 }}>@{m.name}</span>}{m.name === cfg.user && <span className="faint" style={{ fontWeight: 400 }}>you</span>}<Badges list={profiles.data?.[m.name]?.badges} max={3} /></div>
+                {profiles.data?.[m.name]?.status && <div className="d" style={{ color: 'var(--ink)' }}>{profiles.data[m.name]?.status}</div>}
                 <div className="d">{ROLE_HELP[m.role]}</div>
               </div>
               <div className="ctl">
                 {editable ? (
                   <>
-                    <select className="selectlike" value={m.role} onChange={(e) => setMember(m.name, e.target.value as Role)} aria-label={`Role for ${m.name}`}>
+                    <Select className="ghost" value={m.role} onChange={(e) => setMember(m.name, e.target.value as Role)} aria-label={`Role for ${m.name}`}>
                       {assignable.map((r) => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
-                    </select>
+                    </Select>
                     <button type="button" className="btn ghost sm danger" onClick={() => setMember(m.name, 'none')}>Remove</button>
                   </>
                 ) : (
@@ -107,9 +96,9 @@ function Members() {
         {canManage && (
           <form onSubmit={add} className="setrow">
             <input className="input grow" value={name} onChange={(e) => setName(e.target.value)} placeholder="Add someone by their Baton name, e.g. boe" />
-            <select className="selectlike" value={role} onChange={(e) => setRole(e.target.value as Role)} aria-label="Role for the new person">
+            <Select className="ghost" value={role} onChange={(e) => setRole(e.target.value as Role)} aria-label="Role for the new person">
               {assignable.map((r) => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
-            </select>
+            </Select>
             <button className="btn" disabled={!name.trim()}>Add</button>
           </form>
         )}
@@ -124,7 +113,7 @@ interface ClaudeStatus {
   claudeFound: boolean;
 }
 
-function ThisClaude() {
+export function ThisClaude() {
   const { cfg, update } = useApp();
   const { slug, overview } = useProject();
   const toast = useToast();

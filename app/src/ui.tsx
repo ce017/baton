@@ -9,10 +9,10 @@ export const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 export const EASE_IN = [0.7, 0, 0.84, 0] as const;
 export const EASE_MOVE = [0.65, 0, 0.35, 1] as const;
 
-export function Avatar({ label, bot, size }: { label: string; bot?: boolean; size?: 'sm' | 'lg' }) {
+export function Avatar({ label, bot, size, color }: { label: string; bot?: boolean; size?: 'sm' | 'lg'; color?: string }) {
   const letter = label.trim()[0]?.toUpperCase() ?? '?';
   return (
-    <span className={`avatar ${size ?? ''}`} style={{ background: personColor(label) }} title={label}>
+    <span className={`avatar ${size ?? ''} ${color ? 'colored' : ''}`} style={{ background: color || personColor(label) }} title={label}>
       {letter}
       {bot && (
         <span className="bot" aria-label="Claude">

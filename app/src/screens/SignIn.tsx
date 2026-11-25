@@ -78,6 +78,12 @@ export function SignIn() {
       .catch(() => setError("Couldn't reach that server."));
   }, [parsed?.kind, parsed?.server, parsed?.token]);
 
+  // Opening a sign-in link signs in straight away.
+  useEffect(() => {
+    if (parsed?.kind === 'signin' && here && window.location.pathname.startsWith('/signin/')) useLink({ preventDefault() {} } as FormEvent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Coming back from Google in the browser.
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('signin');

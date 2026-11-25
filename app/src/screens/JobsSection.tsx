@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Select } from '../Select.tsx';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { type FormEvent, useState } from 'react';
@@ -120,10 +121,10 @@ export function JobsSection() {
                 <div className="d">{c.cwd ? `${folder(c.cwd)} · ` : ''}active {ago(c.last_seen, now)}</div>
               </div>
               <div className="ctl">
-                <select className="selectlike" value={c.job ?? ''} onChange={(e) => bind(c.session, e.target.value)} aria-label="Job for this chat" disabled={!jobs.length}>
+                <Select className="ghost" value={c.job ?? ''} onChange={(e) => bind(c.session, e.target.value)} aria-label="Job for this chat" disabled={!jobs.length}>
                   <option value="">No job</option>
                   {jobs.map((j) => <option key={j.id} value={j.name}>{j.name}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
           ))

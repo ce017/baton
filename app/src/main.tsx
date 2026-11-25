@@ -21,6 +21,15 @@ interface AppState {
   signOut(): Promise<void>;
 }
 
+// The desktop window shouldn't show the browser's own right-click menu (Back, Reload, Print…).
+if (isTauri) {
+  document.addEventListener('contextmenu', (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest('input, textarea, [contenteditable="true"], .cm-editor') || window.getSelection()?.toString()) return;
+    e.preventDefault();
+  });
+}
+
 const AppCtx = createContext<AppState | null>(null);
 
 export function useApp(): AppState {

@@ -1,4 +1,5 @@
 import { markdown } from '@codemirror/lang-markdown';
+import { Select } from '../Select.tsx';
 import { EditorView } from '@codemirror/view';
 import { useQueryClient } from '@tanstack/react-query';
 import CodeMirror from '@uiw/react-codemirror';
@@ -415,10 +416,10 @@ function PageEditor({ path, page, onDone }: { path: string; page?: Page; onDone:
           <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="economy, server" />
         </Field>
         <Field label="Kind">
-          <select className="input" value={kind} onChange={(e) => setKind(e.target.value as 'page' | 'decision')}>
+          <Select value={kind} onChange={(e) => setKind(e.target.value as 'page' | 'decision')}>
             <option value="page">Page</option>
             <option value="decision">Decision (locked)</option>
-          </select>
+          </Select>
         </Field>
         <label className="row" style={{ height: 32, marginBottom: 14, gap: 6, cursor: 'pointer' }}>
           <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} /> Pin in every brief

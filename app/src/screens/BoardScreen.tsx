@@ -1,4 +1,5 @@
 import { DndContext, type DragEndEvent, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import { Select } from '../Select.tsx';
 import { useQueryClient } from '@tanstack/react-query';
 import { Activity, CheckSquare, Lock, MessageSquare, Pause, Plus, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -50,6 +51,13 @@ export function BoardScreen() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const key = ['p', slug, 'tasks'];
   const open = tasks.data?.find((t) => t.id === route.task);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setMenu((e as CustomEvent<{ id: string; x: number; y: number }>).detail);
+    window.addEventListener('baton:taskmenu', on);
+    return () => window.removeEventListener('baton:taskmenu', on);
+  }, []);
+  const menuTask = menu ? tasks.data?.find((t) => t.id === menu.id) : undefined;
   const sideOpen = !!open || activity;
   const now = overview?.now ?? Date.now();
   const me = cfg.user ?? '';
@@ -88,6 +96,7 @@ export function BoardScreen() {
 
   return (
     <div className="bwrap">
+      {menu && menuTask && <TaskMenu at={menu} task={menuTask} onClose={() => setMenu(null)} onOpen={(id) => { setActivity(false); go({ view: 'board', task: id }); }} />}
       <div className="strip">
         <span className="k">Right now</span>
         {!overview ? (
@@ -109,7 +118,7 @@ export function BoardScreen() {
             );
           })
         ) : (
-          <span className="faint">No Claude has checked in yet. Connect one under Team.</span>
+          <span className="faint">No Claude has checked in yet. Connect yours in Settings (account menu, top right).</span>
         )}
       </div>
       {(overview?.locks ?? []).slice(0, 2).map((l) => (
@@ -207,6 +216,10 @@ function DragCard({ task, editable, selected, onOpen, index, agent, now, nameOf 
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: isDragging ? 0.35 : 1, y: 0, transition: { duration: 0.2, ease: EASE_OUT, delay: index < 8 ? index * 0.03 : 0 } }}
       onClick={() => onOpen(task.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('baton:taskmenu', { detail: { id: task.id, x: e.clientX, y: e.clientY } }));
+      }}
     >
       <Card task={task} agent={agent} now={now} nameOf={nameOf} selected={selected} />
     </motion.div>
@@ -296,9 +309,9 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
       <textarea className="input" rows={2} style={{ fontSize: 17, fontWeight: 600, marginBottom: 14, resize: 'none' }} value={title} disabled={!editable} onChange={(e) => setTitle(e.target.value)} onBlur={() => title.trim() && title !== task.title && save({ title })} />
       <div className="kv">
         <span className="k">Status</span>
-        <select className="input" style={{ width: 'auto', height: 30 }} value={task.status} disabled={!editable} onChange={(e) => save({ status: e.target.value as TaskStatus })}>
+        <Select style={{ width: 'auto', height: 30 }} value={task.status} disabled={!editable} onChange={(e) => save({ status: e.target.value as TaskStatus })}>
           {COLS.map((c) => <option key={c.status} value={c.status}>{c.label}</option>)}
-        </select>
+        </Select>
         <span className="k">Assigned to</span>
         <span>
           <input className="input" style={{ height: 30 }} list="bt-people" value={assignee} disabled={!editable} onChange={(e) => setAssignee(e.target.value)} onBlur={() => assignee !== task.assignee && save({ assignee })} placeholder="Nobody yet" />
@@ -338,6 +351,7 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
         </>
       )}
       <Comments target={task.id} comments={task.comments} canComment={overview?.role !== 'viewer'} />
+      {(overview?.role === 'owner' || overview?.role === 'admin') && <DeleteTask task={task} />}
       <p className="faint" style={{ fontSize: 12, marginTop: 14 }}>Added by {task.created_by_name} · last change by {task.updated_by_name}, {ago(task.updated_at)}</p>
     </>
   );
@@ -362,6 +376,93 @@ function ActivityList() {
         ))}
       </AnimatePresence>
       {feed.data && !feed.data.length && <div className="empty">Nothing has happened yet.</div>}
+    </div>
+  );
+}
+
+/** Right-click on a to-do: open, move, take it, delete. */
+function TaskMenu({ at, task, onClose, onOpen }: { at: { x: number; y: number }; task: Task; onClose: () => void; onOpen: (id: string) => void }) {
+  const { cfg } = useApp();
+  const { slug, overview } = useProject();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [sure, setSure] = useState(false);
+  const role = overview?.role;
+  const admin = role === 'owner' || role === 'admin';
+  const me = cfg.user ?? '';
+  const mineLabel = `${me}'s ${cfg.agentName ?? 'Claude'}`;
+  const act = async (body: Record<string, unknown>, done: string) => {
+    onClose();
+    try {
+      await call(cfg, 'POST', `/api/projects/${slug}/tasks`, { id: task.id, ...body });
+      qc.invalidateQueries({ queryKey: ['p', slug] });
+      toast(done);
+    } catch (err) {
+      toast((err as Error).message, false);
+    }
+  };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [onClose]);
+  const x = Math.min(at.x, window.innerWidth - 220);
+  const y = Math.min(at.y, window.innerHeight - 330);
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 69 }} onMouseDown={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
+      <motion.div className="ctxmenu" style={{ left: x, top: y }} initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1, transition: { duration: 0.12, ease: EASE_OUT } }}>
+        <button type="button" className="menu-item" onClick={() => { onClose(); onOpen(task.id); }}>Open</button>
+        <div className="lbl2">Move to</div>
+        {COLS.map((c) => (
+          <button key={c.status} type="button" className="menu-item" disabled={c.status === task.status} onClick={() => act({ action: 'update', status: c.status }, `Moved to ${c.label}`)}>
+            {c.label}
+          </button>
+        ))}
+        <div className="sep" />
+        <button type="button" className="menu-item" onClick={() => act({ action: 'update', assignee: me }, 'Assigned to you')}>Assign to me</button>
+        {cfg.agentKey && <button type="button" className="menu-item" onClick={() => act({ action: 'update', assignee: mineLabel }, 'Given to your Claude')}>Give to my Claude</button>}
+        <button type="button" className="menu-item" onClick={() => { onClose(); navigator.clipboard.writeText(task.id).catch(() => {}); toast(`Copied ${task.id}`); }}>Copy id ({task.id})</button>
+        {admin && (
+          <>
+            <div className="sep" />
+            <button type="button" className="menu-item danger" onClick={() => (sure ? act({ action: 'delete' }, `Deleted ${task.id}`) : setSure(true))}>
+              {sure ? 'Click again to delete' : 'Delete'}
+            </button>
+          </>
+        )}
+      </motion.div>
+    </>
+  );
+}
+
+function DeleteTask({ task }: { task: Task }) {
+  const { cfg } = useApp();
+  const { slug, go } = useProject();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [sure, setSure] = useState(false);
+  async function del() {
+    try {
+      await call(cfg, 'POST', `/api/projects/${slug}/tasks`, { action: 'delete', id: task.id });
+      go({ view: 'board' });
+      qc.invalidateQueries({ queryKey: ['p', slug] });
+      toast(`Deleted ${task.id}`);
+    } catch (err) {
+      toast((err as Error).message, false);
+    }
+  }
+  return (
+    <div className="row" style={{ marginTop: 18 }}>
+      {sure ? (
+        <>
+          <span className="muted grow" style={{ fontSize: 12.5 }}>Delete {task.id} and its comments for everyone?</span>
+          <button type="button" className="btn ghost sm" onClick={() => setSure(false)}>Cancel</button>
+          <button type="button" className="btn sm danger-solid" onClick={del}>Delete</button>
+        </>
+      ) : (
+        <button type="button" className="btn ghost sm danger" onClick={() => setSure(true)}>Delete to-do</button>
+      )}
     </div>
   );
 }
