@@ -141,7 +141,8 @@ function hookCommand(evt) {
   return `node "${HOOK}" ${evt}${extra}`;
 }
 
-const isBatonHook = (h) => typeof h?.command === 'string' && h.command.includes('hook.mjs') && /baton/i.test(h.command);
+// Our hooks: the CLI's node hook.mjs, or the desktop app's 'Baton.exe --hook <Event> --baton'.
+const isBatonHook = (h) => typeof h?.command === 'string' && ((h.command.includes('hook.mjs') && /baton/i.test(h.command)) || h.command.includes('--baton'));
 
 function stripBaton(hooks) {
   for (const evt of Object.keys(hooks)) {
