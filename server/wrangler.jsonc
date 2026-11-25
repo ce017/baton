@@ -12,10 +12,12 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DirectoryDO", "ProjectDO"] }],
   "observability": { "enabled": true },
+  // Public Google OAuth client id (ID-token sign-in, no secret needed).
+  "vars": { "GOOGLE_CLIENT_ID": "129257316707-ug1l3l72mt1omkqv5so3tg72qhojjoon.apps.googleusercontent.com" },
   // The same app as the desktop one, for invite links and quick access from any browser.
   "assets": {
     "directory": "../app/dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/auth/*", "/health"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/auth/*", "/health", "/privacy"]
   }
 }

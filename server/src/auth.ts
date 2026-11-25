@@ -79,6 +79,12 @@ export async function authRoutes(req: Request, url: URL, path: string, d: AuthDe
   const method = req.method;
   const origin = url.origin;
 
+  if (path === '/privacy' && method === 'GET') {
+    return htmlPage(
+      'Baton privacy',
+      'Baton keeps what you put in it: your name, your email if you sign in with Google, and the notes, to-dos, messages and Claude updates you share with your projects. It is only shown to people in those projects. Nothing is sold or shared with anyone else, and there are no ads or trackers. Google sign-in only gives Baton your name and email. To delete your data or ask anything, open an issue at github.com/ce017/baton.',
+    );
+  }
   if (path === '/api/config' && method === 'GET') {
     return json({ google: !!d.googleClientId, web: origin });
   }
