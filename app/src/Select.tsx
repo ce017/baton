@@ -64,10 +64,10 @@ export function Select({
   };
 
   return (
-    <div ref={ref} className={`sel ${className}`} style={style}>
+    <div ref={ref} className={`dd ${className}`} style={style}>
       <button
         type="button"
-        className="sel-btn"
+        className="dd-btn"
         disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -87,15 +87,15 @@ export function Select({
           else if (e.key === 'Enter') { e.preventDefault(); const o = opts[hi]; if (o) pick(o); }
         }}
       >
-        <span className="sel-val">{cur?.label ?? ''}</span>
-        <ChevronDown size={13} className="sel-chev" />
+        <span className="dd-val">{cur?.label ?? ''}</span>
+        <ChevronDown size={13} className="dd-chev" />
       </button>
       <AnimatePresence>
         {open && (
           <motion.div
             id={id}
             role="listbox"
-            className="sel-pop"
+            className="dd-pop"
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.14, ease: EASE_OUT } }}
             exit={{ opacity: 0, y: -2, transition: { duration: 0.1, ease: EASE_IN } }}
@@ -106,7 +106,7 @@ export function Select({
                 role="option"
                 aria-selected={o.value === String(value)}
                 aria-disabled={o.disabled}
-                className={`sel-opt ${i === hi ? 'hi' : ''} ${o.disabled ? 'off' : ''}`}
+                className={`dd-opt ${i === hi ? 'hi' : ''} ${o.disabled ? 'off' : ''}`}
                 onMouseEnter={() => setHi(i)}
                 onMouseDown={(e) => { e.preventDefault(); pick(o); }}
               >
@@ -114,7 +114,7 @@ export function Select({
                 {o.value === String(value) && <Check size={13} />}
               </div>
             ))}
-            {footer && <div className="sel-foot">{footer(() => setOpen(false))}</div>}
+            {footer && <div className="dd-foot">{footer(() => setOpen(false))}</div>}
           </motion.div>
         )}
       </AnimatePresence>
