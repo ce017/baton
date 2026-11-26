@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Select } from '../Select.tsx';
-import { Crown, Plus, Search, Zap } from 'lucide-react';
+import { AtSign, Crown, Plus, Search, Zap } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { call, isTauri, tauriInvoke } from '../lib/api.ts';
@@ -15,6 +15,7 @@ interface Job {
   labels: string[];
   kind: 'worker' | 'manager';
   auto: boolean;
+  wake: boolean;
 }
 interface Chat {
   session: string;
@@ -198,6 +199,7 @@ export function JobsSection() {
                       {cfg.user}'s {j.name} Claude
                       {j.kind === 'manager' && <span className="jobtag"><Crown size={11} /> Manager</span>}
                       {j.auto && <span className="jobtag"><Zap size={11} /> Starts by itself</span>}
+                      {j.wake && <span className="jobtag"><AtSign size={11} /> Answers mentions</span>}
                     </div>
                     <div className="d truncate">
                       {chatFor(j.name) ? `Chat: ${chatFor(j.name)?.title || 'Untitled chat'}` : 'No chat picked yet'}
@@ -276,7 +278,7 @@ export function JobsSection() {
         </div>
       </div>
 
-      {jobs.some((j) => j.auto) && (
+      {jobs.some((j) => j.auto || j.wake) && (
         <>
           <h2 className="setsec">When Baton starts a job chat</h2>
           <div className="setgroup">
@@ -326,16 +328,17 @@ export function JobsSection() {
   );
 }
 
-function JobForm({ job, onSave, onCancel }: { job?: Job; onSave: (j: { name: string; instructions: string; labels: string[]; kind: string; auto: boolean }) => void; onCancel: () => void }) {
+function JobForm({ job, onSave, onCancel }: { job?: Job; onSave: (j: { name: string; instructions: string; labels: string[]; kind: string; auto: boolean; wake: boolean }) => void; onCancel: () => void }) {
   const [name, setName] = useState(job?.name ?? '');
   const [instructions, setInstructions] = useState(job?.instructions ?? '');
   const [labels, setLabels] = useState(job?.labels.join(', ') ?? '');
   const [kind, setKind] = useState<string>(job?.kind ?? 'worker');
   const [auto, setAuto] = useState(job?.auto ?? false);
+  const [wake, setWake] = useState(job?.wake ?? true);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({ name: name.trim(), instructions: instructions.trim(), labels: labels.split(',').map((l) => l.trim()).filter(Boolean), kind, auto });
+    onSave({ name: name.trim(), instructions: instructions.trim(), labels: labels.split(',').map((l) => l.trim()).filter(Boolean), kind, auto, wake });
   };
   return (
     <motion.form
@@ -382,6 +385,13 @@ function JobForm({ job, onSave, onCancel }: { job?: Job; onSave: (j: { name: str
             <span className="faint">
               {kind === 'manager' ? ' · when a to-do is finished, Baton resumes this chat to check it and plan the next step' : ' · when a to-do is handed to it, Baton resumes this chat on your PC to do it'}
             </span>
+          </span>
+        </div>
+        <div className="row" style={{ gap: 10 }}>
+          <button type="button" role="switch" aria-checked={wake} aria-label="Answers when mentioned" className={`switch ${wake ? 'on' : ''}`} onClick={() => setWake(!wake)}><span /></button>
+          <span className="grow" style={{ fontSize: 13 }}>
+            Answers when mentioned
+            <span className="faint"> · when someone or another Claude mentions it and its chat is idle, Baton wakes that chat on your PC to answer</span>
           </span>
         </div>
         <div className="row" style={{ justifyContent: 'flex-end' }}>

@@ -307,7 +307,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       return json({ ok: true });
     }
     if (what === 'jobs' && method === 'POST') {
-      const b = await body<{ id?: string; name?: string; instructions?: string; labels?: string[]; kind?: string; auto?: boolean; delete?: string }>(req);
+      const b = await body<{ id?: string; name?: string; instructions?: string; labels?: string[]; kind?: string; auto?: boolean; wake?: boolean; delete?: string }>(req);
       return json(b.delete ? await obj.deleteJob(actor, String(b.delete)) : await obj.saveJob(actor, b));
     }
     if (what === 'chatjob' && method === 'POST') {
@@ -342,7 +342,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (what === 'messages' && method === 'GET') return json(await obj.messageRows(actor));
     if (what === 'conversations' && method === 'GET') return json(await obj.conversations(actor));
     if (what === 'chat' && method === 'GET') return json(await obj.chat(actor, url.searchParams.get('with') ?? 'everyone'));
-    if (what === 'post' && method === 'POST') return json({ message: await obj.post(actor, await body<{ to: string; kind: string; text: string; ref?: string }>(req)) });
+    if (what === 'post' && method === 'POST') return json({ message: await obj.post(await withJob(req, obj, actor), await body<{ to: string; kind: string; text: string; ref?: string }>(req)) });
     if (what === 'comment' && method === 'POST') {
       const b = await body<{ target: string; text: string }>(req);
       return json({ message: await obj.board(actor, { action: 'comment', target: b.target, text: b.text }) });
