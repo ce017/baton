@@ -184,6 +184,8 @@ export class ProjectDO extends DurableObject<unknown> {
     this.sql.exec(
       'CREATE TABLE IF NOT EXISTS dispatches(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, job_id TEXT NOT NULL, session TEXT NOT NULL, cwd TEXT NOT NULL, task TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
     );
+    // Pictures pasted into notes, messages and comments, served at /i/<slug>/<id> (the long id is the key).
+    this.sql.exec('CREATE TABLE IF NOT EXISTS images(id TEXT PRIMARY KEY, mime TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL, data BLOB NOT NULL, by_name TEXT NOT NULL, at INTEGER NOT NULL)');
   }
 
   // ---------------------------------------------------------------- setup & roles
@@ -1260,6 +1262,30 @@ export class ProjectDO extends DurableObject<unknown> {
     this.setMeta('tag_colors', JSON.stringify(all));
     this.broadcast('tasks');
     return { tagColors: all };
+  }
+
+  /** Stores a picture for a note, message or comment. Anyone with its link can open it, like a chat app's image link. */
+  async addImage(actor: Actor, a: { mime?: string; name?: string; data?: string }) {
+    this.need(actor, 'member');
+    const mime = String(a.mime ?? '');
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(mime)) throw new BatonError('Pictures must be PNG, JPEG, WebP or GIF.');
+    const b64 = String(a.data ?? '').replace(/^data:[^,]*,/, '');
+    if (!b64 || !/^[A-Za-z0-9+/=]+$/.test(b64)) throw new BatonError('The picture data is not base64.');
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    if (bytes.length > 1_900_000) throw new BatonError('That picture is too big (1.9 MB at most after shrinking).');
+    const used = this.sql.exec<{ s: number | null }>('SELECT SUM(size) AS s FROM images').one().s ?? 0;
+    if (used + bytes.length > 3_000_000_000) throw new BatonError('This project holds 3 GB of pictures already.');
+    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+    const name = clip(String(a.name ?? '').replace(/[[\]()\r\n]/g, ' ').replace(/\s+/g, ' ').trim() || 'image', 80);
+    this.sql.exec('INSERT INTO images(id, mime, name, size, data, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?)', id, mime, name, bytes.length, bytes.buffer, actorLabel(actor), Date.now());
+    return { id, name };
+  }
+
+  /** The bytes of a picture, by its id (no key needed: the id is the key). */
+  async imageOf(id: string): Promise<{ mime: string; data: Uint8Array } | null> {
+    if (!/^[a-f0-9]{24}$/.test(id)) return null;
+    const r = this.sql.exec<{ mime: string; data: ArrayBuffer }>('SELECT mime, data FROM images WHERE id = ?', id).toArray()[0];
+    return r ? { mime: r.mime, data: new Uint8Array(r.data) } : null;
   }
 
   /** The board's background image (presets travel in the overview). */

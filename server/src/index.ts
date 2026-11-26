@@ -90,6 +90,11 @@ async function resolveProject(env: Env, who: Identity, slug?: string | null, ses
   );
 }
 
+async function loadImage(env: Env, slug: string, id: string) {
+  const p = await directory(env).findProject(slug);
+  return p ? projectObj(env, p.id).imageOf(id) : null;
+}
+
 async function body<T>(req: Request): Promise<T> {
   try {
     return (await req.json()) as T;
@@ -138,6 +143,16 @@ async function route(req: Request, env: Env): Promise<Response> {
     return new Response(bytes, { headers: { 'content-type': av.mime, 'cache-control': 'public, max-age=86400', 'access-control-allow-origin': '*' } });
   }
 
+  // Pictures from notes and messages: public by their long random id, so <img> tags work without a key.
+  const im = /^\/i\/([a-z0-9_-]+)\/([a-f0-9]{24})$/.exec(path);
+  if (im?.[1] && im[2] && method === 'GET') {
+    const img = await loadImage(env, im[1], im[2]);
+    if (!img) return new Response('No such picture', { status: 404, headers: { 'access-control-allow-origin': '*' } });
+    return new Response(img.data, {
+      headers: { 'content-type': img.mime, 'cache-control': 'public, max-age=31536000, immutable', 'access-control-allow-origin': '*', 'x-content-type-options': 'nosniff' },
+    });
+  }
+
   if (path === '/mcp') {
     const who = await identify(req, env);
     const actor = toActor(who);
@@ -146,6 +161,12 @@ async function route(req: Request, env: Env): Promise<Response> {
         buildMcpServer({
           actor,
           open: async (slug) => (await resolveProject(env, who, slug)).obj,
+          origin: url.origin,
+          image: async (link) => {
+            const m = /\/i\/([a-z0-9_-]+)\/([a-f0-9]{24})$/.exec(link.trim());
+            if (!m?.[1] || !m[2]) return null;
+            return loadImage(env, m[1], m[2]);
+          },
         }),
       { responseMode: 'json' },
     );
@@ -269,7 +290,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites|profiles|dispatch-claim|dispatch-finish|delete|background|tag-color)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites|profiles|dispatch-claim|dispatch-finish|delete|background|tag-color|images)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
@@ -290,6 +311,11 @@ async function route(req: Request, env: Env): Promise<Response> {
       return json(await obj.notices(actor, Number.isFinite(after) ? after : -1));
     }
     if (what === 'jobs' && method === 'GET') return json(await obj.jobs(actor));
+    if (what === 'images' && method === 'POST') {
+      const r = await obj.addImage(actor, await body<{ mime?: string; name?: string; data?: string }>(req));
+      const link = `${url.origin}/i/${ref.slug}/${r.id}`;
+      return json({ ...r, url: link, markdown: `![${r.name}](${link})` });
+    }
     if (what === 'tag-color' && method === 'POST') return json(await obj.setTagColor(actor, await body<{ tag?: string; color?: number }>(req)));
     if (what === 'background' && method === 'GET') return json(await obj.background(actor));
     if (what === 'background' && method === 'POST') return json(await obj.setBackground(actor, await body<{ preset?: string; data?: string }>(req)));

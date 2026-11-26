@@ -6,6 +6,7 @@ import { useApp } from '../main.tsx';
 import { call } from '../lib/api.ts';
 import { ago, ownerName, presence, yourLabel } from '../lib/format.ts';
 import { Avatar, EASE_OUT, Empty, Skel, useToast, PersonName } from '../ui.tsx';
+import { RichText, usePictureInput, withoutPictures } from '../Pictures.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
 interface Conv {
@@ -44,6 +45,7 @@ export function MessagesScreen() {
   const convs = useProjectQuery<Conv[]>(['conversations'], `/api/projects/${slug}/conversations`);
   const thread = useProjectQuery<ChatMsg[]>(['chat', active], `/api/projects/${slug}/chat?with=${encodeURIComponent(active)}`);
   const [text, setText] = useState('');
+  const pics = usePictureInput(cfg, slug, (md) => setText((t) => (t.trim() ? `${t.trimEnd()}\n${md}` : md)));
   const [pop, setPop] = useState(false);
   const [sel, setSel] = useState(0);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -130,15 +132,15 @@ export function MessagesScreen() {
                     </div>
                     {m.kind === 'question' && !m.mine ? (
                       <div className="askcard">
-                        <div className="tx">{withMentions(m.text, names)}</div>
+                        <div className="tx"><RichText value={m.text} text={(s) => withMentions(s, names)} /></div>
                         <div className="row" style={{ marginTop: 10 }}>
-                          <button type="button" className="btn primary sm" onClick={() => send(`Yes. (re: "${m.text.slice(0, 60)}")`, 'answer', `M-${m.seq}`)}>Yes</button>
-                          <button type="button" className="btn sm" onClick={() => send(`No. (re: "${m.text.slice(0, 60)}")`, 'answer', `M-${m.seq}`)}>No</button>
+                          <button type="button" className="btn primary sm" onClick={() => send(`Yes. (re: "${withoutPictures(m.text).slice(0, 60)}")`, 'answer', `M-${m.seq}`)}>Yes</button>
+                          <button type="button" className="btn sm" onClick={() => send(`No. (re: "${withoutPictures(m.text).slice(0, 60)}")`, 'answer', `M-${m.seq}`)}>No</button>
                           <span className="faint" style={{ fontSize: 12 }}>or write a reply below</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="tx">{withMentions(m.text, names)}</div>
+                      <div className="tx"><RichText value={m.text} text={(s) => withMentions(s, names)} /></div>
                     )}
                     {m.ref && <div className="faint" style={{ fontSize: 12, marginTop: 3 }}>About {m.ref}</div>}
                   </div>
@@ -175,12 +177,15 @@ export function MessagesScreen() {
                     if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); const m = matches[sel]; if (m) pick(m.name); return; }
                     if (e.key === 'Escape') { setPop(false); return; }
                   }
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(text); }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!pics.busy) send(text); }
                 }}
+                {...pics.handlers}
               />
               <div className="ctools">
                 <button type="button" className="btn ghost sm" onClick={() => { setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setPop(true); }}><AtSign size={13} /> Mention</button>
-                <button type="button" className="btn primary sm send" disabled={!text.trim()} onClick={() => send(text)}>Send</button>
+                {pics.button()}
+                {pics.input}
+                <button type="button" className="btn primary sm send" disabled={!text.trim() || pics.busy} onClick={() => send(text)}>Send</button>
               </div>
             </div>
             <div className="chint">Claudes read new messages the next time they work. Mention one with @ so it knows the message is for it.</div>
@@ -197,7 +202,7 @@ function ConvRow({ c, on, onClick, icon, now }: { c: Conv; on: boolean; onClick:
       {icon}
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="nm"><PersonName label={c.name} card={false} /></div>
-        <div className="pv">{c.last ? <><PersonName label={c.last.from_label} card={false} />: {c.last.text}</> : 'No messages yet'}</div>
+        <div className="pv">{c.last ? <><PersonName label={c.last.from_label} card={false} />: {withoutPictures(c.last.text)}</> : 'No messages yet'}</div>
       </div>
       {c.unread > 0 ? <span className="un">{c.unread}</span> : c.last ? <span className="faint" style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>{ago(c.last.at, now)}</span> : null}
     </button>

@@ -81,8 +81,8 @@ const b = await mcp(boeA, true);
 const l = await mcp(lucasA, false);
 const v = await mcp(vicA, true);
 const tools = (await c.client.listTools()).tools.map((t) => t.name);
-check('12 baton_ tools (legacy era)', tools.length === 12 && tools.every((t) => t.startsWith('baton_')), tools.join(','));
-check('modern era works too', (await b.client.listTools()).tools.length === 12);
+check('13 baton_ tools (legacy era)', tools.length === 13 && tools.every((t) => t.startsWith('baton_')), tools.join(','));
+check('modern era works too', (await b.client.listTools()).tools.length === 13);
 
 let r = await c.call('baton_brief');
 check('brief for a single-project agent', r.text.includes('Roll a Fish') && r.text.includes('(owner)'), r.text);
@@ -374,6 +374,15 @@ check('jobs: people only see their own jobs and chats', boeList.jobs?.length ===
     const mb2 = (await rest('GET', `${P}/jobs`, ceo.key)).data;
     check('jobs v2: finishing a to-do wakes the auto manager', mb2.dispatches.some((d) => d.job === 'Manager' && d.task === rid), JSON.stringify(mb2.dispatches));
   }
+
+  // ---- pictures in notes and messages
+  const dot = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==';
+  const pic = await rest('POST', `${P}/images`, ceo.key, { mime: 'image/png', data: dot, name: 'dot' });
+  check('pictures: upload gives a markdown link', pic.status === 200 && /^!\[dot\]\(https?:\/\/.+\/i\/[a-z0-9_-]+\/[a-f0-9]{24}\)$/.test(pic.data.markdown ?? ''), JSON.stringify(pic.data));
+  const svg = await rest('POST', `${P}/images`, ceo.key, { mime: 'image/svg+xml', data: dot });
+  check('pictures: only PNG, JPEG, WebP, GIF', svg.status === 400, JSON.stringify(svg.data));
+  const served = await fetch(pic.data.url ?? `${SERVER}/i/x/0`);
+  check('pictures: served by link without a key', served.status === 200 && served.headers.get('content-type') === 'image/png', String(served.status));
 
   // ---- delete a project
   const dp = await mk('dp');

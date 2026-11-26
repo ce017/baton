@@ -11,6 +11,7 @@ import { Avatar, EASE_IN, EASE_OUT, Skel, useToast, PersonName } from '../ui.tsx
 import { Comments } from './PagesScreen.tsx';
 import { WakeButton } from './Waker.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
+import { RichText } from '../Pictures.tsx';
 
 const COLS: { status: TaskStatus; label: string; dot: string }[] = [
   { status: 'todo', label: 'To do', dot: 'var(--todo)' },
@@ -507,14 +508,22 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
   const toast = useToast();
   const editable = canEdit(overview?.role);
   const [title, setTitle] = useState(task.title);
-  const [assignee, setAssignee] = useState(task.assignee);
-  useEffect(() => { setTitle(task.title); setAssignee(task.assignee); }, [task]);
+  useEffect(() => { setTitle(task.title); }, [task]);
+  const myJobs = useProjectQuery<{ jobs: { name: string }[] }>(['jobs'], `/api/projects/${slug}/jobs`, overview?.role !== 'viewer');
   const allTasks = useProjectQuery<Task[]>(['tasks'], `/api/projects/${slug}/tasks`);
   const allTags = useAllTags(allTasks.data);
   const now = overview?.now ?? Date.now();
   const list = checklist(task.notes);
   const description = task.notes.split('\n').filter((l) => !/^\s*[-*]\s+\[( |x|X)\]/.test(l)).join('\n').trim();
-  const people = overview ? [...overview.members.map((m) => m.name), ...overview.live.filter((c) => c.isAgent).map((c) => c.label)] : [];
+  // People, their Claudes that have worked here, and your own job Claudes (even before their first run).
+  const people = [
+    ...new Set([
+      ...(overview?.members.map((m) => m.name) ?? []),
+      ...(overview?.live.filter((c) => c.isAgent).map((c) => c.label) ?? []),
+      ...(myJobs.data?.jobs.map((j) => `${cfg.user ?? ''}'s ${j.name} Claude`) ?? []),
+      ...(task.assignee ? [task.assignee] : []),
+    ]),
+  ];
 
   async function save(patch: Partial<Pick<Task, 'title' | 'assignee' | 'area' | 'notes' | 'status'>>) {
     try {
@@ -546,10 +555,10 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
           {COLS.map((c) => <option key={c.status} value={c.status}>{c.label}</option>)}
         </Select>
         <span className="k">Assigned to</span>
-        <span>
-          <input className="input" style={{ height: 30 }} list="bt-people" value={assignee} disabled={!editable} onChange={(e) => setAssignee(e.target.value)} onBlur={() => assignee !== task.assignee && save({ assignee })} placeholder="Nobody yet" />
-          <datalist id="bt-people">{people.map((p) => <option key={p} value={p} />)}</datalist>
-        </span>
+        <Select style={{ width: 'auto', height: 30 }} value={task.assignee} disabled={!editable} aria-label="Assigned to" onChange={(e) => save({ assignee: e.target.value })}>
+          <option value="">Nobody yet</option>
+          {people.map((p) => <option key={p} value={p}>{p}</option>)}
+        </Select>
         <span className="k">Tags</span>
         <TagPicker value={tagsOf(task.area)} all={allTags} disabled={!editable} onChange={(tags) => save({ area: joinTags(tags) })} />
       </div>
@@ -580,7 +589,7 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
       {description && (
         <>
           <div className="seck">Details</div>
-          <div className="muted selectable" style={{ whiteSpace: 'pre-wrap' }}>{description}</div>
+          <div className="muted selectable" style={{ whiteSpace: 'pre-wrap' }}><RichText value={description} /></div>
         </>
       )}
       <Comments target={task.id} comments={task.comments} canComment={overview?.role !== 'viewer'} />

@@ -5,6 +5,7 @@ import { call, isTauri, type Task, tauriInvoke } from '../lib/api.ts';
 import { ownerName, yourLabel } from '../lib/format.ts';
 import { EASE_IN, EASE_OUT, useToast } from '../ui.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
+import { withoutPictures } from '../Pictures.tsx';
 
 export interface NotifyPrefs {
   messages: boolean;
@@ -89,7 +90,7 @@ export function Notifier() {
         if (first || !loadPrefs().messages) return;
         for (const m of r.messages.slice(-3)) {
           const who = ownerName(m.from_label) === me && m.from_label.includes("'s ") ? yourLabel(m.from_label) : m.from_label;
-          notify(m.kind === 'question' ? `${who} asks` : m.kind === 'handoff' ? `${who} handed work over` : who, m.text, 'messages');
+          notify(m.kind === 'question' ? `${who} asks` : m.kind === 'handoff' ? `${who} handed work over` : who, withoutPictures(m.text), 'messages');
         }
       })
       .catch(() => {});

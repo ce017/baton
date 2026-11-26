@@ -1,11 +1,14 @@
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { markdown } from '@codemirror/lang-markdown';
+import { tags as hl } from '@lezer/highlight';
 import { Select } from '../Select.tsx';
 import { EditorView } from '@codemirror/view';
 import { useQueryClient } from '@tanstack/react-query';
 import CodeMirror from '@uiw/react-codemirror';
 import { ChevronRight, FilePlus2, FileText, Folder, Gavel, Pencil, Sparkles, Star } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Picture, picturesIn, RichText, uploadPicture, usePictureInput } from '../Pictures.tsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { call, canEdit, isTauri, type Page, type TreeItem } from '../lib/api.ts';
@@ -279,6 +282,9 @@ function PageView({ path, items }: { path: string; items: TreeItem[] }) {
           remarkPlugins={[remarkGfm]}
           urlTransform={safeUrl}
           components={{
+            img({ src, alt }) {
+              return typeof src === 'string' && src ? <Picture src={src} alt={alt} /> : null;
+            },
             a({ href, children }) {
               if (href?.startsWith('wiki:')) {
                 const target = decodeURIComponent(href.slice(5));
@@ -310,6 +316,7 @@ export function Comments({ target, comments, canComment }: { target: string; com
   const qc = useQueryClient();
   const toast = useToast();
   const [text, setText] = useState('');
+  const pics = usePictureInput(cfg, slug, (md) => setText((t) => (t.trim() ? `${t.trimEnd()}\n${md}` : md)));
   async function send(e: FormEvent) {
     e.preventDefault();
     if (!text.trim()) return;
@@ -332,38 +339,60 @@ export function Comments({ target, comments, canComment }: { target: string; com
               <b style={{ fontWeight: 500 }}><PersonName label={c.by_name} /></b>
               <span className="faint" style={{ fontSize: 12 }}>{ago(c.at)}</span>
             </div>
-            <div className="selectable" style={{ whiteSpace: 'pre-wrap' }}>{c.text}</div>
+            <div className="selectable" style={{ whiteSpace: 'pre-wrap' }}><RichText value={c.text} /></div>
           </div>
         </div>
       ))}
       {canComment && (
-        <form onSubmit={send} className="row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
+        <form onSubmit={send} style={{ marginTop: 8 }}>
           <textarea
-            className="input grow"
+            className="input"
             rows={2}
-            placeholder="Add a comment or advice for the team and their Claudes…"
+            placeholder="Add a comment or advice for the team and their Claudes… (paste a picture to add it)"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && send(e)}
+            {...pics.handlers}
           />
-          <button className="btn" disabled={!text.trim()}>Comment</button>
+          <div className="row" style={{ marginTop: 6 }}>
+            {pics.button()}
+            {pics.input}
+            <div className="grow" />
+            <button className="btn" disabled={!text.trim() || pics.busy}>Comment</button>
+          </div>
         </form>
       )}
     </section>
   );
 }
 
+// Colours come from the app's theme variables, so the editor matches dark and light mode.
 const editorTheme = EditorView.theme({
-  '&': { backgroundColor: 'transparent' },
-  '.cm-content': { padding: '14px 4px', caretColor: 'var(--accent)' },
+  '&': { backgroundColor: 'transparent', color: 'var(--ink)' },
+  '.cm-content': { padding: '14px 4px', caretColor: 'var(--ink)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ink)' },
   '.cm-gutters': { display: 'none' },
-  '.cm-activeLine': { backgroundColor: 'rgba(43,89,195,0.04)' },
+  '.cm-activeLine': { backgroundColor: 'var(--hover)' },
+  '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection': { backgroundColor: 'var(--accent-soft) !important' },
+  '.cm-placeholder': { color: 'var(--ink-3)' },
 });
+
+const markdownColours = HighlightStyle.define([
+  { tag: [hl.heading1, hl.heading2], fontWeight: '700', color: 'var(--ink)' },
+  { tag: [hl.heading3, hl.heading4, hl.heading5, hl.heading6], fontWeight: '600', color: 'var(--ink)' },
+  { tag: hl.strong, fontWeight: '700' },
+  { tag: hl.emphasis, fontStyle: 'italic' },
+  { tag: hl.strikethrough, textDecoration: 'line-through' },
+  { tag: [hl.link, hl.url], color: 'var(--accent)' },
+  { tag: hl.monospace, color: 'var(--doing)' },
+  { tag: hl.quote, color: 'var(--ink-2)' },
+  { tag: [hl.processingInstruction, hl.meta, hl.contentSeparator], color: 'var(--ink-3)' },
+  { tag: hl.list, color: 'var(--ink-2)' },
+]);
 
 function PageEditor({ path, page, onDone }: { path: string; page?: Page; onDone: (savedPath?: string) => void }) {
   const { cfg, slug } = useProject();
   const qc = useQueryClient();
-  const toast = useToast();
   const [title, setTitle] = useState(page?.title ?? path.split('/').pop() ?? '');
   const [summary, setSummary] = useState(page?.summary ?? '');
   const [body, setBody] = useState(page?.body ?? '');
@@ -372,6 +401,50 @@ function PageEditor({ path, page, onDone }: { path: string; page?: Page; onDone:
   const [kind, setKind] = useState<'page' | 'decision'>(page?.kind === 'decision' ? 'decision' : 'page');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const view = useRef<EditorView | null>(null);
+  const toast = useToast();
+  /** Puts picture markdown where the cursor is, on its own line. */
+  const insertAtCursor = (v: EditorView | null, md: string) => {
+    if (!v) return setBody((b) => `${b.trimEnd()}\n\n${md}\n`);
+    const at = v.state.selection.main.head;
+    const before = at > 0 && v.state.sliceDoc(at - 1, at) !== '\n' ? '\n' : '';
+    v.dispatch({ changes: { from: at, insert: `${before}${md}\n` }, selection: { anchor: at + before.length + md.length + 1 } });
+  };
+  const pics = usePictureInput(cfg, slug, (md) => insertAtCursor(view.current, md));
+  const extensions = useMemo(() => {
+    const upload = async (v: EditorView, files: File[]) => {
+      for (const file of files) {
+        try {
+          insertAtCursor(v, await uploadPicture(cfg, slug, file));
+        } catch (err) {
+          toast((err as Error).message, false);
+        }
+      }
+    };
+    return [
+      markdown(),
+      EditorView.lineWrapping,
+      editorTheme,
+      syntaxHighlighting(markdownColours),
+      EditorView.domEventHandlers({
+        paste(e, v) {
+          const files = picturesIn(e.clipboardData?.items);
+          if (!files.length) return false;
+          e.preventDefault();
+          upload(v, files);
+          return true;
+        },
+        drop(e, v) {
+          const files = picturesIn(e.dataTransfer?.files);
+          if (!files.length) return false;
+          e.preventDefault();
+          upload(v, files);
+          return true;
+        },
+      }),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg, slug]);
 
   async function save() {
     setError('');
@@ -426,7 +499,7 @@ function PageEditor({ path, page, onDone }: { path: string; page?: Page; onDone:
         </label>
       </div>
       <div className="editor-wrap">
-        <CodeMirror value={body} onChange={setBody} extensions={[markdown(), EditorView.lineWrapping, editorTheme]} basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: true }} minHeight="360px" autoFocus={!!page} />
+        <CodeMirror value={body} onChange={setBody} theme="none" extensions={extensions} onCreateEditor={(v) => { view.current = v; }} basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: true }} minHeight="360px" autoFocus={!!page} />
       </div>
       {error && <p className="error-text">{error}</p>}
       <div className="row" style={{ marginTop: 14 }}>
@@ -434,7 +507,9 @@ function PageEditor({ path, page, onDone }: { path: string; page?: Page; onDone:
           {saving ? 'Saving…' : 'Save'} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'rgba(255,255,255,0.4)' }}>Ctrl S</span>
         </button>
         <button type="button" className="btn ghost" onClick={() => onDone()}>Cancel</button>
-        <span className="faint" style={{ marginLeft: 'auto', fontSize: 12 }}>Markdown · [[links]] to other pages · secrets are refused</span>
+        {pics.button('Add picture')}
+        {pics.input}
+        <span className="faint" style={{ marginLeft: 'auto', fontSize: 12 }}>Markdown · [[links]] to other pages · paste pictures · secrets are refused</span>
       </div>
     </motion.div>
   );

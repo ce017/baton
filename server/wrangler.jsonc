@@ -18,6 +18,6 @@
   "assets": {
     "directory": "../app/dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/auth/*", "/health", "/privacy"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/auth/*", "/health", "/privacy", "/i/*"]
   }
 }
