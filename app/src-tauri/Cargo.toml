@@ -1,6 +1,6 @@
 [package]
 name = "baton"
-version = "0.3.3"
+version = "0.3.4"
 description = "Baton: a shared workspace for people and their Claudes"
 authors = ["ceo"]
 license = "MIT"
