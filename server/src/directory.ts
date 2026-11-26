@@ -381,6 +381,24 @@ export class DirectoryDO extends DurableObject<unknown> {
     } catch {}
     this.sql.exec('CREATE TABLE IF NOT EXISTS badges(user_id TEXT NOT NULL, badge TEXT NOT NULL, label TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, badge))');
     this.sql.exec('CREATE TABLE IF NOT EXISTS avatars(user_id TEXT PRIMARY KEY, mime TEXT NOT NULL, b64 TEXT NOT NULL, at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS chat_projects(session TEXT PRIMARY KEY, user_id TEXT NOT NULL, slug TEXT NOT NULL, at INTEGER NOT NULL)');
+  }
+
+  /** Ties a Claude Code chat to a project (null unties it), so its hooks and brief use that project. */
+  async setChatProject(userId: string, session: string, slug: string | null) {
+    if (!slug) this.sql.exec('DELETE FROM chat_projects WHERE session = ? AND user_id = ?', session, userId);
+    else this.sql.exec('INSERT OR REPLACE INTO chat_projects(session, user_id, slug, at) VALUES (?, ?, ?, ?)', session, userId, slug, Date.now());
+  }
+
+  async chatProject(userId: string, session: string): Promise<string | null> {
+    return this.sql.exec<{ slug: string }>('SELECT slug FROM chat_projects WHERE session = ? AND user_id = ?', session, userId).toArray()[0]?.slug ?? null;
+  }
+
+  /** session → project slug for this person's chats (the app shows where each chat works). */
+  async chatProjectsOf(userId: string): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const r of this.sql.exec<{ session: string; slug: string }>('SELECT session, slug FROM chat_projects WHERE user_id = ?', userId).toArray()) out[r.session] = r.slug;
+    return out;
   }
 
   /** Sets (or with an empty string removes) someone's profile picture: a small data: URL the app already shrank. */
@@ -479,7 +497,7 @@ export class DirectoryDO extends DurableObject<unknown> {
       this.sql.exec('DELETE FROM email_invites WHERE project_id = ?', id);
       this.sql.exec('DELETE FROM projects WHERE id = ?', id);
     }
-    for (const t of ['user_projects', 'agents', 'sessions', 'emails', 'login_links', 'badges', 'avatars']) this.sql.exec(`DELETE FROM ${t} WHERE user_id = ?`, userId);
+    for (const t of ['user_projects', 'agents', 'sessions', 'emails', 'login_links', 'badges', 'avatars', 'chat_projects']) this.sql.exec(`DELETE FROM ${t} WHERE user_id = ?`, userId);
     this.sql.exec('DELETE FROM users WHERE id = ?', userId);
     return { owned, joined };
   }

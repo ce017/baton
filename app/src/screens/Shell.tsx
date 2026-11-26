@@ -99,6 +99,11 @@ export function Shell() {
     return () => window.removeEventListener('keydown', k);
   }, []);
 
+  // Chats without a job of their own work in the project you have open (this PC's Claude key).
+  useEffect(() => {
+    if (slug && cfg.agentKey) call(cfg, 'POST', '/api/agents/default', { project: slug }, 'agent').catch(() => {});
+  }, [slug, cfg]);
+
   if (me.isError) {
     return (
       <div className="signin">

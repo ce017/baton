@@ -79,8 +79,8 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
   server.registerTool(
     'baton_search',
     {
-      title: 'Search the vault',
-      description: 'Search pages, decisions, skills and tasks. Returns paths with one-line summaries, not full text.',
+      title: 'Search notes, decisions, skills and to-dos',
+      description: "Search the project's notes (the Notes tab in the Baton app), decisions, skills and to-dos. Returns paths with one-line summaries, not full text.",
       inputSchema: z.object({ query: z.string().describe('Words to look for'), project, job }),
       annotations: READ,
     },
@@ -90,8 +90,8 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
   server.registerTool(
     'baton_read',
     {
-      title: 'Read a page',
-      description: 'Full text of one vault page (with its comments).',
+      title: 'Read a note',
+      description: "Full text of one note (a page in the app's Notes tab), with its comments.",
       inputSchema: z.object({ path: z.string().describe('Page path, e.g. "Systems/FishService"'), project, job }),
       annotations: READ,
     },
@@ -101,9 +101,9 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
   server.registerTool(
     'baton_write',
     {
-      title: 'Write a page',
+      title: 'Write a note',
       description:
-        'Create or update a vault page (markdown, [[links]] allowed). Folders come from the path. kind "decision" records a locked decision. Owner/admin only. Secrets are refused.',
+        'Create or update a note: a markdown page that shows in the Notes tab of the Baton app ([[links]] allowed). "Add this as a note" means this tool. Folders come from the path. kind "decision" records a locked decision. Pass the project the person means (the brief names this chat\'s project). Owner/admin only. Secrets are refused.',
       inputSchema: z.object({
         path: z.string().describe('e.g. "Systems/FishService" or "Decisions/Arctic prices"'),
         body: z.string().optional().describe('Markdown text (required for a new page)'),

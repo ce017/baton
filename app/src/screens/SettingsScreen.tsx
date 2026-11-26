@@ -10,7 +10,6 @@ import { useApp } from '../main.tsx';
 import { call } from '../lib/api.ts';
 import { useToast } from '../ui.tsx';
 import { AccountSection } from './InviteSection.tsx';
-import { JobsSection } from './JobsSection.tsx';
 import { NotifySettings } from './Notifier.tsx';
 import { ObsidianSettings } from './Obsidian.tsx';
 import { ThisClaude } from './PeopleScreen.tsx';
@@ -213,7 +212,6 @@ export function SettingsScreen() {
         </div>
         <ProfileSection />
         <ThisClaude />
-        <JobsSection />
         <NotifySettings />
         <WakeSettings />
         <ObsidianSettings key={overview?.project.slug} />

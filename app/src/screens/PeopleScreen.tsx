@@ -6,6 +6,7 @@ import { useApp } from '../main.tsx';
 import { call, isTauri, type Role, tauriInvoke, type TreeItem } from '../lib/api.ts';
 import { Avatar, DrawCheck, Skel, useToast } from '../ui.tsx';
 import { InviteSection } from './InviteSection.tsx';
+import { JobsSection } from './JobsSection.tsx';
 import { Badges, type Profile } from './SettingsScreen.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
@@ -25,10 +26,11 @@ export function PeopleScreen(_: { onCreateProject: () => void }) {
         <div className="sethead">
           <div className="grow">
             <h1>Team</h1>
-            <p>Who's in {overview?.project.name ?? 'this project'}, what they can do, and how to invite more people.</p>
+            <p>Who's in {overview?.project.name ?? 'this project'}, which Claude chat does what, and how to invite more people.</p>
           </div>
         </div>
         {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
+        <JobsSection />
         <InviteSection />
         <Skills />
         {overview?.role === 'owner' && <DeleteProject />}

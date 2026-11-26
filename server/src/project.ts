@@ -281,6 +281,7 @@ export class ProjectDO extends DurableObject<unknown> {
     const me = actorId(actor);
     const out: string[] = [];
     out.push(`Baton · ${this.meta('name')} · you are ${actorLabel(actor)} (${role}) · ${new Date(now).toISOString().slice(0, 16)}Z`);
+    out.push(`This chat works in the project "${this.meta('name')}": pass project: "${this.meta('slug')}" in every baton_* call. Notes = pages in the app's Notes tab (baton_write / baton_read).`);
     out.push(...this.jobBrief(actor));
     out.push(`People: ${this.memberRows().map((m) => `${m.name} (${m.role})`).join(', ')}`);
     out.push(UNTRUSTED);
@@ -1408,7 +1409,7 @@ export class ProjectDO extends DurableObject<unknown> {
   }
 
   /** Gives a chat a job by name (or clears it with null). Works from the person's app or the chat itself. */
-  async setChatJob(actor: Actor, session: string, jobName: string | null): Promise<{ job: string | null; instructions: string; labels: string[] }> {
+  async setChatJob(actor: Actor, session: string, jobName: string | null, info: { title?: string; cwd?: string } = {}): Promise<{ job: string | null; instructions: string; labels: string[] }> {
     this.need(actor, 'member');
     let job: JobRow | undefined;
     if (jobName) {
@@ -1422,9 +1423,11 @@ export class ProjectDO extends DurableObject<unknown> {
     if (owned && owned.user_id !== actor.userId) throw new BatonError('That chat belongs to someone else.', 403);
     const now = Date.now();
     this.sql.exec(
-      `INSERT INTO chats(session, user_id, agent_id, job_id, title, cwd, first_seen, last_seen) VALUES (?, ?, ?, ?, '', '', ?, ?)
-       ON CONFLICT(session) DO UPDATE SET job_id = excluded.job_id`,
-      session, actor.userId, actor.agentId ?? '', job?.id ?? null, now, now,
+      `INSERT INTO chats(session, user_id, agent_id, job_id, title, cwd, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session) DO UPDATE SET job_id = excluded.job_id,
+         title = CASE WHEN excluded.title != '' THEN excluded.title ELSE chats.title END,
+         cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE chats.cwd END`,
+      session, actor.userId, actor.agentId ?? '', job?.id ?? null, clip(info.title ?? '', 80), clip(info.cwd ?? '', 200), now, now,
     );
     this.broadcast('jobs');
     return { job: job?.name ?? null, instructions: job?.instructions ?? '', labels: job ? parseList(job.labels) : [] };

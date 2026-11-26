@@ -1,6 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Select } from '../Select.tsx';
-import { Crown, Plus, Zap } from 'lucide-react';
+import { Crown, Plus, Search, Zap } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { call, isTauri, tauriInvoke } from '../lib/api.ts';
@@ -23,6 +23,14 @@ interface Chat {
   last_seen: number;
   job: string | null;
 }
+/** A Claude Code chat found on this PC (desktop app only). */
+interface LocalChat {
+  session: string;
+  title: string;
+  cwd: string;
+  lastActive: number;
+}
+
 interface Dispatch {
   id: string;
   job: string;
@@ -133,10 +141,11 @@ export function JobsSection() {
     }
   }
 
-  async function bind(session: string, job: string) {
+  async function bind(session: string, job: string, info: { title?: string; cwd?: string } = {}) {
     try {
-      await call(cfg, 'POST', `/api/projects/${slug}/chatjob`, { session, job: job || null });
+      await call(cfg, 'POST', `/api/projects/${slug}/chatjob`, { session, job: job || null, title: info.title ?? '', cwd: info.cwd ?? '' });
       qc.invalidateQueries({ queryKey: ['p', slug] });
+      qc.invalidateQueries({ queryKey: ['chat-projects'] });
       toast(job ? `That chat is now your ${job} Claude` : 'That chat has no job now');
     } catch (err) {
       toast((err as Error).message, false);
@@ -145,10 +154,26 @@ export function JobsSection() {
 
   const chatFor = (name: string) => chats.find((c) => c.job === name);
 
+  // Every chat on this PC (newest first), with what Baton knows about it in this project.
+  const local = useQuery({ queryKey: ['local-chats'], queryFn: () => tauriInvoke<LocalChat[]>('local_chats'), enabled: isTauri, staleTime: 20_000 });
+  const where = useQuery({ queryKey: ['chat-projects'], queryFn: () => call<Record<string, string>>(cfg, 'GET', '/api/me/chat-projects') });
+  const [q, setQ] = useState('');
+  const [all, setAll] = useState(false);
+  const known = new Map(chats.map((c) => [c.session, c]));
+  const merged = [
+    ...(local.data ?? []).map((l) => ({ session: l.session, title: l.title || known.get(l.session)?.title || '', cwd: l.cwd || known.get(l.session)?.cwd || '', last: l.lastActive, job: known.get(l.session)?.job ?? null })),
+    ...chats.filter((c) => !(local.data ?? []).some((l) => l.session === c.session)).map((c) => ({ session: c.session, title: c.title, cwd: c.cwd, last: c.last_seen, job: c.job })),
+  ];
+  const needle = q.trim().toLowerCase();
+  const found = merged.filter((c) => !needle || `${c.title} ${c.cwd}`.toLowerCase().includes(needle));
+  // Chats with a job here come first, then the newest.
+  found.sort((a, b) => Number(!!b.job) - Number(!!a.job) || b.last - a.last);
+  const shown = all || needle ? found.slice(0, 80) : found.slice(0, 10);
+
   return (
     <>
       <h2 className="setsec">
-        Jobs for your Claude chats
+        Your Claudes' jobs
         {editing === null && (
           <button type="button" className="btn ghost sm act" onClick={() => setEditing('new')}><Plus size={14} /> New job</button>
         )}
@@ -200,34 +225,53 @@ export function JobsSection() {
         )}
       </div>
 
-      <h2 className="setsec">Your Claude chats</h2>
+      <h2 className="setsec">
+        Your Claude chats
+        {merged.length > 0 && (
+          <span className="act chatsearch">
+            <Search size={13} />
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a chat" aria-label="Find a chat" />
+          </span>
+        )}
+      </h2>
       <div className="setgroup">
-        {chats.length ? (
-          chats.map((c) => (
-            <div key={c.session} className="setrow">
-              <div className="tx">
-                <div className="t truncate">{c.title || 'Untitled chat'}</div>
-                <div className="d">{c.cwd ? `${folder(c.cwd)} · ` : ''}active {ago(c.last_seen, now)}</div>
+        {shown.length ? (
+          shown.map((c) => {
+            const elsewhere = where.data?.[c.session] && where.data[c.session] !== slug ? where.data[c.session] : null;
+            return (
+              <div key={c.session} className="setrow">
+                <div className="tx">
+                  <div className="t truncate">{c.title || 'Untitled chat'}</div>
+                  <div className="d">
+                    {c.cwd ? `${folder(c.cwd)} · ` : ''}active {ago(c.last, now)}
+                    {elsewhere && <span className="faint"> · works in {elsewhere}</span>}
+                  </div>
+                </div>
+                <div className="ctl">
+                  <Select className="ghost" value={c.job ?? ''} onChange={(e) => bind(c.session, e.target.value, { title: c.title, cwd: c.cwd })} aria-label="Job for this chat" disabled={!jobs.length}>
+                    <option value="">{jobs.length ? 'No job' : 'Make a job first'}</option>
+                    {jobs.map((j) => <option key={j.id} value={j.name}>{j.name}{j.kind === 'manager' ? ' (manager)' : ''}</option>)}
+                  </Select>
+                </div>
               </div>
-              <div className="ctl">
-                <Select className="ghost" value={c.job ?? ''} onChange={(e) => bind(c.session, e.target.value)} aria-label="Job for this chat" disabled={!jobs.length}>
-                  <option value="">No job</option>
-                  {jobs.map((j) => <option key={j.id} value={j.name}>{j.name}{j.kind === 'manager' ? ' (manager)' : ''}</option>)}
-                </Select>
-              </div>
-            </div>
-          ))
+            );
+          })
         ) : (
           <div className="setrow">
             <div className="tx">
-              <div className="t">No chats yet</div>
-              <div className="d">Chats show up here once your connected Claude Code starts working in this project.</div>
+              <div className="t">{needle ? 'No chat matches' : 'No chats yet'}</div>
+              <div className="d">{isTauri ? 'Chats from Claude Code on this PC show up here.' : 'Open the Baton desktop app to pick from the Claude Code chats on your PC.'}</div>
             </div>
+          </div>
+        )}
+        {!needle && found.length > 10 && (
+          <div className="setrow">
+            <button type="button" className="btn ghost sm" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show all ${found.length} chats`}</button>
           </div>
         )}
         <div className="setrow">
           <div className="tx">
-            <div className="d">You can also type <span className="mono">baton job Scripting</span> in a chat to give it that job, or <span className="mono">baton job none</span> to clear it.</div>
+            <div className="d">Giving a chat a job here also makes it work in this project. You can also type <span className="mono">baton job Scripting</span> in a chat, or <span className="mono">baton job none</span> to clear it.</div>
           </div>
         </div>
       </div>

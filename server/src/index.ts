@@ -68,8 +68,14 @@ async function withJob(req: Request, obj: DurableObjectStub<ProjectDO>, actor: A
 }
 
 /** Picks the project for a call: explicit slug, the agent's default, or the person's only one. */
-async function resolveProject(env: Env, who: Identity, slug?: string | null) {
+async function resolveProject(env: Env, who: Identity, slug?: string | null, session?: string) {
   const dir = directory(env);
+  // A chat that has a job in a project works there, whatever its folder or the default says.
+  const bound = session ? await dir.chatProject(who.userId, session) : null;
+  if (bound) {
+    const p = await dir.findProject(bound);
+    if (p) return { ref: p, obj: projectObj(env, p.id) };
+  }
   const wanted = slug?.trim() || who.defaultProject;
   if (wanted) {
     const p = await dir.findProject(wanted);
@@ -192,6 +198,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json({ ok: true, deletedProjects: r.owned.length });
   }
 
+  if (path === '/api/me/chat-projects' && method === 'GET') return json(await dir.chatProjectsOf(who.userId));
+
   if (path === '/api/me' && method === 'GET') {
     return json({
       user: who.userName,
@@ -234,12 +242,12 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/api/brief' && method === 'GET') {
-    const { obj } = await resolveProject(env, who, url.searchParams.get('project'));
+    const { obj } = await resolveProject(env, who, url.searchParams.get('project'), sessionOf(req));
     return text(await obj.brief(await withJob(req, obj, actor)));
   }
 
   if (path === '/api/hook/inbox' && method === 'GET') {
-    const { obj } = await resolveProject(env, who, url.searchParams.get('project'));
+    const { obj } = await resolveProject(env, who, url.searchParams.get('project'), sessionOf(req));
     return text(await obj.hookInbox(await withJob(req, obj, actor)));
   }
 
@@ -248,14 +256,16 @@ async function route(req: Request, env: Env): Promise<Response> {
     const b = await body<{ project?: string; session?: string; job?: string | null }>(req);
     const session = typeof b.session === 'string' && /^[\w-]{6,80}$/.test(b.session) ? b.session : sessionOf(req);
     if (!session) throw new BatonError('Missing the chat session id.');
-    const { obj } = await resolveProject(env, who, b.project);
-    return json(await obj.setChatJob(actor, session, b.job ? String(b.job) : null));
+    const { obj, ref } = await resolveProject(env, who, b.project, session);
+    const r = await obj.setChatJob(actor, session, b.job ? String(b.job) : null);
+    await dir.setChatProject(who.userId, session, r.job ? ref.slug : null);
+    return json(r);
   }
 
   if (path === '/api/events' && method === 'POST') {
     const b = await body<{ project?: string; kind: 'edit' | 'reply' | 'session'; text: string }>(req);
     if (!['edit', 'reply', 'session'].includes(b.kind)) throw new BatonError('kind is edit, reply or session.');
-    const { obj } = await resolveProject(env, who, b.project);
+    const { obj } = await resolveProject(env, who, b.project, sessionOf(req));
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
@@ -301,9 +311,13 @@ async function route(req: Request, env: Env): Promise<Response> {
       return json(b.delete ? await obj.deleteJob(actor, String(b.delete)) : await obj.saveJob(actor, b));
     }
     if (what === 'chatjob' && method === 'POST') {
-      const b = await body<{ session: string; job: string | null }>(req);
+      const b = await body<{ session: string; job: string | null; title?: string; cwd?: string }>(req);
       if (typeof b.session !== 'string' || !/^[\w-]{6,80}$/.test(b.session)) throw new BatonError('Missing the chat session id.');
-      return json(await obj.setChatJob(actor, b.session, b.job ? String(b.job) : null));
+      const r = await obj.setChatJob(actor, b.session, b.job ? String(b.job) : null, { title: String(b.title ?? ''), cwd: String(b.cwd ?? '') });
+      // Giving a chat a job here ties it to this project; clearing the job unties it (if it was tied here).
+      if (r.job) await dir.setChatProject(who.userId, b.session, ref.slug);
+      else if ((await dir.chatProject(who.userId, b.session)) === ref.slug) await dir.setChatProject(who.userId, b.session, null);
+      return json(r);
     }
     if (what === 'members' && method === 'POST') {
       if (who.agentId) throw new BatonError('Only people manage members, not their Claudes.', 403);

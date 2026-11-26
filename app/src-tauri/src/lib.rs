@@ -485,6 +485,82 @@ fn local_skills() -> Result<Value, String> {
     Ok(Value::Array(list))
 }
 
+/// Reads up to `len` bytes from the start (`from_end` false) or the end of a file.
+fn read_part(path: &Path, len: u64, from_end: bool) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(path) else { return String::new() };
+    let size = f.metadata().map(|m| m.len()).unwrap_or(0);
+    if from_end {
+        let _ = f.seek(SeekFrom::Start(size.saturating_sub(len)));
+    }
+    let mut buf = Vec::new();
+    let _ = f.take(len).read_to_end(&mut buf);
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+/// The Claude Code chats on this PC (newest first), whether or not they have used Baton yet:
+/// session id, the chat's name (its custom title, else its first prompt), folder and last activity.
+#[tauri::command]
+fn local_chats() -> Result<Value, String> {
+    let root = claude_dir().join("projects");
+    let mut files: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    if let Ok(dirs) = fs::read_dir(&root) {
+        for d in dirs.flatten() {
+            let Ok(rd) = fs::read_dir(d.path()) else { continue };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.extension().is_some_and(|x| x == "jsonl") {
+                    if let Ok(m) = e.metadata() {
+                        if m.len() > 2_000 {
+                            files.push((p, m.modified().unwrap_or(std::time::UNIX_EPOCH)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut out = Vec::new();
+    for (p, modified) in files.into_iter().take(60) {
+        let session = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let tail = read_part(&p, 512 * 1024, true);
+        let mut title = tail
+            .lines()
+            .rev()
+            .filter(|l| l.contains("\"custom-title\""))
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .find_map(|e| e["customTitle"].as_str().map(|s| s.trim().to_string()))
+            .unwrap_or_default();
+        let head = read_part(&p, 256 * 1024, false);
+        let mut cwd = String::new();
+        for line in head.lines() {
+            let Ok(e) = serde_json::from_str::<Value>(line) else { continue };
+            if cwd.is_empty() {
+                if let Some(c) = e["cwd"].as_str() {
+                    cwd = c.to_string();
+                }
+            }
+            if title.is_empty() && e["type"] == "user" {
+                let text = match &e["message"]["content"] {
+                    Value::String(s) => s.clone(),
+                    Value::Array(parts) => parts.iter().filter_map(|x| x["text"].as_str()).collect::<Vec<_>>().join(" "),
+                    _ => String::new(),
+                };
+                let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                if !text.is_empty() && !text.starts_with('<') {
+                    title = text.chars().take(80).collect();
+                }
+            }
+            if !cwd.is_empty() && !title.is_empty() {
+                break;
+            }
+        }
+        let last = modified.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        out.push(json!({ "session": session, "title": title, "cwd": cwd, "lastActive": last }));
+    }
+    Ok(Value::Array(out))
+}
+
 /// When on, closing the window hides Baton to the tray so notifications keep coming.
 static CLOSE_TO_TRAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -551,6 +627,7 @@ pub fn run() {
             disconnect_claude,
             install_skills,
             local_skills,
+            local_chats,
             resume_chat,
             set_close_to_tray,
             run_wake,
