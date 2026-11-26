@@ -37,6 +37,8 @@ fn handle(event: &str, input: &Value) -> Option<()> {
         .chars()
         .take(80)
         .collect();
+    // The chat's own name, as Claude Code shows it (auto title or one the person set).
+    let name = input["transcript_path"].as_str().and_then(chat_name);
     let with = |r: ureq::Request| {
         let mut r = r.set("authorization", &auth);
         if !session.is_empty() {
@@ -47,6 +49,9 @@ fn handle(event: &str, input: &Value) -> Option<()> {
         }
         if event == "UserPromptSubmit" && !title.is_empty() {
             r = r.set("x-baton-title", &urlencode(&title));
+        }
+        if let Some(name) = &name {
+            r = r.set("x-baton-name", &urlencode(name));
         }
         r
     };
@@ -258,6 +263,22 @@ fn edit_target(input: &Value, cwd: &str) -> Option<String> {
 }
 
 /// Last assistant text in the transcript (reads only the last 256 KB).
+/// The newest `custom-title` in the transcript's tail: the name Claude Code shows for this chat.
+fn chat_name(path: &str) -> Option<String> {
+    let mut f = std::fs::File::open(Path::new(path)).ok()?;
+    let size = f.metadata().ok()?.len();
+    f.seek(SeekFrom::Start(size.saturating_sub(512 * 1024))).ok()?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf);
+    text.lines()
+        .rev()
+        .filter(|l| l.contains("\"custom-title\""))
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .find_map(|e| e["customTitle"].as_str().map(|s| s.trim().chars().take(80).collect::<String>()))
+        .filter(|s| !s.is_empty())
+}
+
 fn last_reply(path: &str) -> Option<String> {
     let mut f = std::fs::File::open(Path::new(path)).ok()?;
     let size = f.metadata().ok()?.len();

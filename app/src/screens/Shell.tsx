@@ -5,11 +5,13 @@ import { createContext, type FormEvent, useContext, useEffect, useMemo, useState
 import { useApp } from '../main.tsx';
 import { type Config, call, type Me, type Overview, type Task, type TreeItem } from '../lib/api.ts';
 import { useLive } from '../lib/live.ts';
-import { Avatar, EASE_MOVE, Skel, useToast } from '../ui.tsx';
+import { Avatar, EASE_MOVE, PeopleProvider, PersonName, Skel, useToast } from '../ui.tsx';
 import { BoardScreen } from './BoardScreen.tsx';
 import { MessagesScreen } from './MessagesScreen.tsx';
 import { Notifier, UpdateNotice } from './Notifier.tsx';
 import { Waker } from './Waker.tsx';
+import { Dispatcher } from './JobsSection.tsx';
+import { ProfileCard } from './ProfileCard.tsx';
 import { ObsidianSync } from './Obsidian.tsx';
 import { PagesScreen } from './PagesScreen.tsx';
 import { PeopleScreen } from './PeopleScreen.tsx';
@@ -115,6 +117,7 @@ export function Shell() {
   const o = overview.data;
 
   return (
+    <People cfg={cfg} slug={slug}>
     <div className="app">
       <header className="topbar2">
         <div className="brand" style={{ padding: 0 }}>
@@ -172,7 +175,7 @@ export function Shell() {
             <div style={{ position: 'fixed', inset: 0, zIndex: 29 }} onClick={() => setMenu(false)} />
             <div className="menu" style={{ right: 12, top: 48 }}>
               <div style={{ padding: '6px 10px 8px' }}>
-                <div style={{ fontWeight: 600 }}>{cfg.user}</div>
+                <div style={{ fontWeight: 600 }}><PersonName label={cfg.user ?? ''} card={false} /> <span className="faint" style={{ fontWeight: 400 }}>@{cfg.user}</span></div>
                 <div className="faint" style={{ fontSize: 12 }}>{o ? `${o.role} · ${o.project.name}` : cfg.server}</div>
               </div>
               <button type="button" className="menu-item" disabled={!slug} onClick={() => { setPage(null); go({ view: 'settings' }); setMenu(false); }}>
@@ -197,8 +200,10 @@ export function Shell() {
           <Welcome onCreate={() => setPage('new')} onJoin={() => setPage('join')} />
         ) : state ? (
           <ProjectCtx.Provider value={state}>
+            <ProfileCard />
             <Notifier />
             <Waker />
+            <Dispatcher />
             <ObsidianSync />
             {route.view === 'board' && <BoardScreen />}
             {route.view === 'notes' && <div className="pagewrap" style={{ display: 'flex', flexDirection: 'column' }}><PagesScreen /></div>}
@@ -210,6 +215,7 @@ export function Shell() {
         ) : null}
       </main>
     </div>
+    </People>
   );
 }
 
@@ -299,4 +305,25 @@ function Palette({ onClose }: { onClose: () => void }) {
       </div>
     </>
   );
+}
+
+type ProfileLite = { display?: string; color?: string; avatar?: number } | null;
+
+/** Everyone's profile (picture, display name, colour) for <Avatar> and <PersonName>, your own included. */
+function People({ cfg, slug, children }: { cfg: Config; slug?: string; children: React.ReactNode }) {
+  const mine = useQuery({ queryKey: ['profile'], queryFn: () => call<ProfileLite>(cfg, 'GET', '/api/me/profile') });
+  const team = useQuery({ queryKey: ['p', slug, 'profiles'], queryFn: () => call<Record<string, ProfileLite>>(cfg, 'GET', `/api/projects/${slug}/profiles`), enabled: !!slug });
+  const value = useMemo(() => {
+    const out = { pics: {} as Record<string, string>, names: {} as Record<string, string>, colors: {} as Record<string, string> };
+    const all: Record<string, ProfileLite> = { ...(team.data ?? {}) };
+    if (cfg.user && mine.data) all[cfg.user] = mine.data;
+    for (const [name, p] of Object.entries(all)) {
+      if (!p) continue;
+      if (p.avatar) out.pics[name] = `${cfg.server}/api/avatars/${name}?v=${p.avatar}`;
+      if (p.display) out.names[name] = p.display;
+      if (p.color) out.colors[name] = p.color;
+    }
+    return out;
+  }, [team.data, mine.data, cfg.server, cfg.user]);
+  return <PeopleProvider value={value}>{children}</PeopleProvider>;
 }

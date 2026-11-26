@@ -1,7 +1,7 @@
 {
   "name": "@baton/app",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",
@@ -27,6 +27,8 @@
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-notification": "^2.8.1",
     "@tauri-apps/plugin-opener": "^2.7.3",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "@uiw/react-codemirror": "^4.25.12",
     "lucide-react": "^1.78.0",
     "motion": "^14.14.0",

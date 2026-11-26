@@ -344,6 +344,49 @@ check('jobs: people only see their own jobs and chats', boeList.jobs?.length ===
   const gone = await rest('POST', '/api/me/delete', temp.key, { confirm: temp.name });
   const after = await rest('GET', '/api/me', temp.key);
   const members = (await rest('GET', `${P}/members`, ceo.key)).data;
+
+  // ---- jobs v2: to-dos go to the job chat whose labels fit; auto jobs queue a run of that exact chat
+  const sj = (await rest('GET', `${P}/jobs`, ceo.key)).data.jobs.find((j) => j.name === 'Scripting');
+  await rest('POST', `${P}/jobs`, ceo.key, { id: sj.id, name: 'Scripting', instructions: 'You write Luau.', labels: ['UI', 'World'], auto: true });
+  await rest('POST', `${P}/jobs`, ceo.key, { name: 'Manager', kind: 'manager', auto: true });
+  const routed = await rest('POST', `${P}/tasks`, boe.key, { action: 'add', title: 'Connect the new world to the game' });
+  check('jobs v2: a new to-do goes to the job whose label fits', String(routed.data.message ?? routed.data).includes(`${ceo.name}'s Scripting Claude`), JSON.stringify(routed.data));
+  const rid = /T-\d+/.exec(String(routed.data.message ?? routed.data))?.[0];
+  const j2 = (await rest('GET', `${P}/jobs`, ceo.key)).data;
+  const run = j2.dispatches?.find((d) => d.task === rid && d.job === 'Scripting');
+  check('jobs v2: an auto job queues a run of that chat', run?.status === 'pending' && run.session === `sess-${tag}-0001`, JSON.stringify(j2.dispatches));
+  check('jobs v2: jobs carry role and auto', j2.jobs.some((j) => j.kind === 'manager' && j.auto), JSON.stringify(j2.jobs));
+  const unrouted = await rest('POST', `${P}/tasks`, boe.key, { action: 'add', title: 'Buy coffee' });
+  check('jobs v2: to-dos with no fitting label stay unassigned', !String(unrouted.data.message ?? unrouted.data).includes('handed'), JSON.stringify(unrouted.data));
+  const steal2 = await rest('POST', `${P}/dispatch-claim`, boe.key, { id: run?.id });
+  check("jobs v2: nobody else claims your chat's run", steal2.status === 409, JSON.stringify(steal2.data));
+  const claim = await rest('POST', `${P}/dispatch-claim`, ceo.key, { id: run?.id });
+  const twice = await rest('POST', `${P}/dispatch-claim`, ceo.key, { id: run?.id });
+  check('jobs v2: a run is claimed once', claim.status === 200 && twice.status === 409, JSON.stringify([claim.data, twice.data]));
+  await rest('POST', `${P}/dispatch-finish`, ceo.key, { id: run?.id, status: 'done', result: 'Wired it up.' });
+  const mgrSess = `sess-${tag}-0002`;
+  await fetch(`${SERVER}/api/chat-job`, { method: 'POST', headers: { authorization: `Bearer ${ceoA}`, 'x-baton-session': mgrSess, 'content-type': 'application/json' }, body: JSON.stringify({ project: slug, session: mgrSess, job: 'Manager' }) });
+  const mb = (await rest('GET', `${P}/jobs`, ceo.key)).data;
+  const mgrChat = mb.chats.find((c) => c.session === mgrSess);
+  check('jobs v2: a chat can be the manager', mgrChat?.job === 'Manager', JSON.stringify(mb.chats));
+  if (mgrChat) {
+    await rest('POST', `${P}/tasks`, ceo.key, { action: 'update', id: rid, status: 'done' });
+    const mb2 = (await rest('GET', `${P}/jobs`, ceo.key)).data;
+    check('jobs v2: finishing a to-do wakes the auto manager', mb2.dispatches.some((d) => d.job === 'Manager' && d.task === rid), JSON.stringify(mb2.dispatches));
+  }
+
+  // ---- delete a project
+  const dp = await mk('dp');
+  await rest('POST', '/api/projects', dp.key, { slug: `del${tag}`, name: 'Del' });
+  await rest('POST', `/api/projects/del${tag}/members`, dp.key, { user: boe.name, role: 'admin' });
+  const notOwner = await rest('POST', `/api/projects/del${tag}/delete`, boe.key, { confirm: `del${tag}` });
+  check('delete project: only the owner', notOwner.status === 403, JSON.stringify(notOwner.data));
+  const noConfirm = await rest('POST', `/api/projects/del${tag}/delete`, dp.key, { confirm: 'x' });
+  check('delete project: needs the name typed', noConfirm.status === 400, JSON.stringify(noConfirm.data));
+  const delP = await rest('POST', `/api/projects/del${tag}/delete`, dp.key, { confirm: `del${tag}` });
+  const boeMe = (await rest('GET', '/api/me', boe.key)).data;
+  const gone2 = await rest('GET', `/api/projects/del${tag}/overview`, dp.key);
+  check('delete project: gone for everyone', delP.status === 200 && !boeMe.projects.some((p) => p.slug === `del${tag}`) && gone2.status === 404, JSON.stringify([delP.data, gone2.status]));
   check('delete account: removes the person, their projects and memberships', gone.data.deletedProjects === 1 && after.status === 401 && !members.some((m) => m.name === temp.name), JSON.stringify([gone.data, after.status]));
 }
 

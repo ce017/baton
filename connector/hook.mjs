@@ -53,6 +53,27 @@ function editTarget(input, cwd) {
 }
 
 /** Last assistant text in the transcript (reads only the file's tail). */
+/** The newest custom-title in the transcript's tail: the name Claude Code shows for this chat. */
+function chatName(transcriptPath) {
+  if (!transcriptPath) return '';
+  try {
+    const size = statSync(transcriptPath).size;
+    const len = Math.min(size, 512 * 1024);
+    const buf = Buffer.alloc(len);
+    const fd = openSync(transcriptPath, 'r');
+    readSync(fd, buf, 0, len, size - len);
+    closeSync(fd);
+    for (const line of buf.toString('utf8').split('\n').reverse()) {
+      if (!line.includes('"custom-title"')) continue;
+      try {
+        const t = String(JSON.parse(line).customTitle ?? '').trim();
+        if (t) return t.slice(0, 80);
+      } catch {}
+    }
+  } catch {}
+  return '';
+}
+
 function lastReply(transcriptPath) {
   if (!transcriptPath) return '';
   try {
@@ -97,6 +118,8 @@ async function main() {
   if (input.session_id) headers['x-baton-session'] = String(input.session_id);
   if (input.cwd) headers['x-baton-cwd'] = encodeURIComponent(String(input.cwd).slice(0, 200));
   if (event === 'UserPromptSubmit' && input.prompt) headers['x-baton-title'] = encodeURIComponent(String(input.prompt).replace(/\s+/g, ' ').trim().slice(0, 80));
+  const name = chatName(input.transcript_path);
+  if (name) headers['x-baton-name'] = encodeURIComponent(name);
   const opts = { timeoutMs: TIMEOUT, headers };
 
   if (event === 'SessionStart') {

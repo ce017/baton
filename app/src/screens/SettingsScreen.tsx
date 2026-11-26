@@ -1,6 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, Check } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { Camera, Check } from 'lucide-react';
+import claudeBadge from '../assets/badges/small/claude.png';
+import earlyBadge from '../assets/badges/small/early.png';
+import founderBadge from '../assets/badges/small/founder.png';
+import hostBadge from '../assets/badges/small/host.png';
+import verifiedBadge from '../assets/badges/small/verified.png';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call } from '../lib/api.ts';
 import { useToast } from '../ui.tsx';
@@ -23,24 +28,52 @@ export interface Profile {
   about: string;
   color: string;
   status: string;
+  avatar?: number;
   badges: Badge[];
 }
 
 const COLORS = ['#5b8def', '#3fa37a', '#c9a23f', '#d0743c', '#c4566b', '#9a6fd1', '#4fa3b5', '#8a8a8a'];
 
 /** Small badge chips. Earned ones come from what you did; "host" ones only this server's host can give. */
+/** Earned badges get their own logo; host-given ones share the award. */
+const BADGE_ICONS: Record<string, { icon: string; why: string }> = {
+  founder: { icon: founderBadge, why: 'started a project here' },
+  claude: { icon: claudeBadge, why: 'connected a Claude' },
+  verified: { icon: verifiedBadge, why: 'signed in with a verified email' },
+  early: { icon: earlyBadge, why: 'joined before 2027' },
+};
+
 export function Badges({ list, max = 4 }: { list?: Badge[]; max?: number }) {
   if (!list?.length) return null;
   return (
     <span className="badges">
-      {list.slice(0, max).map((b) => (
-        <span key={b.id} className={`badge ${b.kind}`} title={b.kind === 'host' ? `${b.label}: given by this server's host` : `${b.label}: earned`}>
-          {b.kind === 'host' && <Award size={11} />}
-          {b.label}
-        </span>
-      ))}
+      {list.slice(0, max).map((b) => {
+        const meta = BADGE_ICONS[b.id];
+        const icon = meta?.icon ?? hostBadge;
+        const tip = b.kind === 'host' ? `${b.label}: given by this server's host` : `${b.label}: ${meta?.why ?? 'earned'}`;
+        return (
+          <span key={b.id} className={`badge ${b.kind} b-${meta ? b.id : 'other'}`} title={tip} aria-label={tip} role="img">
+            <img src={icon} alt="" width={14} height={14} draggable={false} />
+          </span>
+        );
+      })}
     </span>
   );
+}
+
+/** Crops the middle square of a picture and shrinks it to 160 px WebP, so it stays small on the server. */
+async function shrinkPicture(file: File): Promise<string> {
+  if (file.size > 15_000_000) throw new Error('That file is too big.');
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const c = document.createElement('canvas');
+  c.width = c.height = 160;
+  c.getContext('2d')!.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 160, 160);
+  for (const q of [0.85, 0.7, 0.5]) {
+    const url = c.toDataURL('image/webp', q);
+    if (url.length < 100_000) return url;
+  }
+  throw new Error("Couldn't make that picture small enough.");
 }
 
 function ProfileSection() {
@@ -52,6 +85,17 @@ function ProfileSection() {
   useEffect(() => {
     if (prof.data) setP({ display: prof.data.display, status: prof.data.status, about: prof.data.about, color: prof.data.color });
   }, [prof.data]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  async function setPicture(file: File | null) {
+    try {
+      const data = file ? await shrinkPicture(file) : '';
+      await call(cfg, 'POST', '/api/me/avatar', { data });
+      qc.invalidateQueries();
+      toast(file ? 'Picture updated' : 'Picture removed');
+    } catch (err) {
+      toast((err as Error).message, false);
+    }
+  }
   const dirty = !!prof.data && (p.display !== prof.data.display || p.status !== prof.data.status || p.about !== prof.data.about || p.color !== prof.data.color);
 
   async function save(e: FormEvent) {
@@ -72,11 +116,19 @@ function ProfileSection() {
       <h2 className="setsec">Your profile</h2>
       <form className="setgroup" onSubmit={save}>
         <div className="setrow">
-          <span className={`avatar xl ${p.color ? "colored" : ""}`} style={{ background: p.color || undefined }}>{initial}</span>
+          <button type="button" className={`avatar xl pfp ${p.color ? 'colored' : ''} ${prof.data?.avatar ? 'pic' : ''}`} style={{ background: p.color || undefined }} onClick={() => fileRef.current?.click()} title="Change picture" aria-label="Change profile picture">
+            {prof.data?.avatar ? <img src={`${cfg.server}/api/avatars/${cfg.user}?v=${prof.data.avatar}`} alt="" /> : initial}
+            <span className="pfp-edit"><Camera size={14} /></span>
+          </button>
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) setPicture(file); }} />
           <div className="tx">
             <div className="t">{p.display || cfg.user} <span className="faint" style={{ fontWeight: 400 }}>@{cfg.user}</span></div>
             <div className="d">{p.status || 'No status'} </div>
             <div style={{ marginTop: 6 }}><Badges list={prof.data?.badges} max={8} /></div>
+          </div>
+          <div className="ctl">
+            <button type="button" className="btn ghost sm" onClick={() => fileRef.current?.click()}>Change picture</button>
+            {!!prof.data?.avatar && <button type="button" className="btn ghost sm danger" onClick={() => setPicture(null)}>Remove</button>}
           </div>
         </div>
         <div className="setrow">

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { call, isTauri, type Task, tauriInvoke } from '../lib/api.ts';
 import { ownerName, yourLabel } from '../lib/format.ts';
-import { EASE_IN, EASE_OUT } from '../ui.tsx';
+import { EASE_IN, EASE_OUT, useToast } from '../ui.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
 export interface NotifyPrefs {
@@ -207,6 +207,8 @@ const newer = (a: string, b: string) => {
 /** Checks the GitHub releases for a newer Baton and says what's in it. */
 export function UpdateNotice() {
   const [rel, setRel] = useState<{ tag: string; url: string; notes: string } | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const toast = useToast();
   useEffect(() => {
     const check = () =>
       fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' } })
@@ -221,14 +223,55 @@ export function UpdateNotice() {
         .catch(() => {});
     check();
     const t = setInterval(check, 6 * 3_600_000);
-    return () => clearInterval(t);
+    // Ctrl+Shift+U previews the notice (and the Windows toast) with a sample release.
+    const preview = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'u')) return;
+      const notes = 'Job chats take the to-dos that fit them · Manager chats plan and hand out work · Share skills from your PC';
+      setRel({ tag: 'v0.3.0', url: `https://github.com/${REPO}/releases`, notes });
+      if (isTauri) osNotify('Baton v0.3.0 is out', notes).catch(() => {});
+    };
+    window.addEventListener('keydown', preview);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('keydown', preview);
+    };
   }, []);
   if (!rel) return null;
+
+  /** Downloads the signed update, installs it over this copy (settings and sign-in stay) and restarts. */
+  async function updateNow() {
+    setProgress(0);
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const up = await check();
+      if (!up) throw new Error('No update found for this PC yet.');
+      let total = 0;
+      let got = 0;
+      await up.downloadAndInstall((e) => {
+        if (e.event === 'Started') total = e.data.contentLength ?? 0;
+        else if (e.event === 'Progress') {
+          got += e.data.chunkLength;
+          if (total) setProgress(Math.min(99, Math.round((got / total) * 100)));
+        } else if (e.event === 'Finished') setProgress(100);
+      });
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+    } catch (err) {
+      setProgress(null);
+      toast(`Couldn't update in the app: ${String((err as Error).message ?? err)}. Use See what's new to download it.`, false);
+    }
+  }
+
   return (
     <motion.div className="updatebar" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE_OUT } }}>
       <Bell size={14} />
       <span className="grow truncate"><b>Baton {rel.tag} is out.</b> {rel.notes}</span>
-      <button type="button" className="btn primary sm" onClick={async () => {
+      {isTauri && (
+        <button type="button" className="btn primary sm" disabled={progress !== null} onClick={updateNow}>
+          {progress === null ? 'Update now' : progress < 100 ? `Updating… ${progress}%` : 'Restarting…'}
+        </button>
+      )}
+      <button type="button" className={`btn sm ${isTauri ? 'ghost' : 'primary'}`} onClick={async () => {
         if (isTauri) {
           const { openUrl } = await import('@tauri-apps/plugin-opener');
           await openUrl(rel.url);

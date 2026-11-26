@@ -1,13 +1,13 @@
 import { DndContext, type DragEndEvent, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { Select } from '../Select.tsx';
 import { useQueryClient } from '@tanstack/react-query';
-import { Activity, CheckSquare, Lock, MessageSquare, Pause, Plus, X } from 'lucide-react';
+import { Activity, CheckSquare, Lock, MessageSquare, Pause, Plus, X, Image as ImageIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../main.tsx';
 import { call, canEdit, type FeedRow, type LiveCard, type Task, type TaskStatus } from '../lib/api.ts';
 import { ago, ownerName, yourLabel, presence } from '../lib/format.ts';
-import { Avatar, EASE_IN, EASE_OUT, Skel, useToast } from '../ui.tsx';
+import { Avatar, EASE_IN, EASE_OUT, Skel, useToast, PersonName } from '../ui.tsx';
 import { Comments } from './PagesScreen.tsx';
 import { WakeButton } from './Waker.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
@@ -19,11 +19,226 @@ const COLS: { status: TaskStatus; label: string; dot: string }[] = [
   { status: 'done', label: 'Done', dot: 'var(--ink-3)' },
 ];
 
+/** Colours people picked for tags in this project (set by BoardScreen from the overview). */
+let PICKED: Record<string, number> = {};
+const TAG_COLORS = ['Green', 'Yellow', 'Orange', 'Red', 'Purple', 'Blue', 'Sky', 'Lime', 'Pink', 'Grey'];
+
+/** A tag's colour: the one picked for it, or a steady one from its name (10 Trello-like colours). */
 const tone = (s: string) => {
-  let h = 0;
-  for (const ch of s.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return `tone-${h % 6}`;
+  const picked = PICKED[s.trim().toLowerCase()];
+  if (picked !== undefined) return `tone-${picked}`;
+  let h = 2166136261;
+  for (const ch of s.trim().toLowerCase()) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
+  return `tone-${(h >>> 0) % 10}`;
 };
+
+/** Board backgrounds anyone can pick; owners and admins can also upload an image. */
+const BG_PRESETS: Record<string, string> = {
+  dusk: 'linear-gradient(135deg, #2b1f4a 0%, #6b3a6e 45%, #d4795a 100%)',
+  ocean: 'linear-gradient(135deg, #0b2a4a 0%, #13618a 55%, #2fb3c4 100%)',
+  forest: 'linear-gradient(135deg, #102a1e 0%, #1f5a3c 55%, #6fa35a 100%)',
+  ember: 'linear-gradient(135deg, #2a0f0a 0%, #8a2b16 50%, #e0a63a 100%)',
+  slate: 'linear-gradient(135deg, #1c2230 0%, #39445a 60%, #6b7a94 100%)',
+  aurora: 'linear-gradient(135deg, #0d1b2a 0%, #1b4d5c 40%, #4b9f7a 70%, #b3d36b 100%)',
+  blush: 'linear-gradient(135deg, #f5d0c5 0%, #e7a6b8 50%, #b48cc8 100%)',
+  sky: 'linear-gradient(180deg, #8ec5fc 0%, #e0c3fc 100%)',
+};
+
+/** The board background as CSS, with the image fetched only when it changed. */
+function useBoardBackground(): string {
+  const { slug, overview } = useProject();
+  const bg = overview?.background;
+  const img = useProjectQuery<{ data: string }>(['background', String(bg?.at ?? 0)], `/api/projects/${slug}/background`, bg?.kind === 'image');
+  if (bg?.kind === 'preset') return BG_PRESETS[bg.preset] ?? '';
+  if (bg?.kind === 'image' && img.data?.data) return `center / cover no-repeat url("${img.data.data}")`;
+  return '';
+}
+
+/** Shrinks an image to at most 1920 px wide JPEG so it stays light for everyone. */
+async function shrinkBackground(file: File): Promise<string> {
+  if (file.size > 25_000_000) throw new Error('That file is too big.');
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1920 / bmp.width);
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * scale);
+  c.height = Math.round(bmp.height * scale);
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
+  for (const q of [0.82, 0.7, 0.55, 0.4]) {
+    const url = c.toDataURL('image/jpeg', q);
+    if (url.length < 1_350_000) return url;
+  }
+  throw new Error("Couldn't make that image small enough.");
+}
+
+function BackgroundPicker() {
+  const { cfg, slug, overview } = useProject();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+  const cur = overview?.background;
+  async function set(body: { preset?: string; data?: string }) {
+    setBusy(true);
+    try {
+      await call(cfg, 'POST', `/api/projects/${slug}/background`, body);
+      qc.invalidateQueries({ queryKey: ['p', slug] });
+    } catch (err) {
+      toast((err as Error).message, false);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <span style={{ position: 'relative' }}>
+      <button type="button" className="btn ghost" onClick={() => setOpen((v) => !v)}><ImageIcon size={14} /> Background</button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
+          <div className="bgpop">
+            <div className="faint" style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Board background · everyone sees it</div>
+            <div className="bgswatches">
+              <button type="button" className={`bgsw none ${!cur?.kind ? 'on' : ''}`} onClick={() => set({ preset: 'none' })} aria-label="No background">None</button>
+              {Object.entries(BG_PRESETS).map(([id, css]) => (
+                <button key={id} type="button" className={`bgsw ${cur?.kind === 'preset' && cur.preset === id ? 'on' : ''}`} style={{ background: css }} onClick={() => set({ preset: id })} aria-label={`${id} background`} title={id} />
+              ))}
+            </div>
+            <button type="button" className="btn sm" style={{ width: '100%', justifyContent: 'center', marginTop: 10 }} disabled={busy} onClick={() => file.current?.click()}>
+              {busy ? 'Uploading…' : cur?.kind === 'image' ? 'Change image' : 'Upload an image'}
+            </button>
+            <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f) return;
+              try {
+                await set({ data: await shrinkBackground(f) });
+              } catch (err) {
+                toast((err as Error).message, false);
+              }
+            }} />
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** A to-do's tags live in its area, comma separated ("UI, World"). */
+export const tagsOf = (area: string) => area.split(',').map((t) => t.trim()).filter(Boolean);
+const joinTags = (tags: string[]) => tags.join(', ').slice(0, 120);
+
+/** Every tag used in the project, most used first: the saved list you pick from. */
+function useAllTags(tasks?: Task[]) {
+  return useMemo(() => {
+    const count = new Map<string, { name: string; n: number }>();
+    for (const t of tasks ?? []) for (const tag of tagsOf(t.area)) {
+      const k = tag.toLowerCase();
+      const cur = count.get(k);
+      count.set(k, { name: cur?.name ?? tag, n: (cur?.n ?? 0) + 1 });
+    }
+    return [...count.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  }, [tasks]);
+}
+
+/** Trello-style tags: chips you can remove, and a list of the project's tags to add (or a new one). */
+function TagPicker({ value, all, disabled, onChange }: { value: string[]; all: { name: string; n: number }[]; disabled?: boolean; onChange: (tags: string[]) => void }) {
+  const { cfg, slug } = useProject();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [paint, setPaint] = useState<string | null>(null);
+  async function setColor(tag: string, color: number) {
+    try {
+      await call(cfg, 'POST', `/api/projects/${slug}/tag-color`, { tag, color });
+      qc.invalidateQueries({ queryKey: ['p', slug] });
+    } catch (err) {
+      toast((err as Error).message, false);
+    }
+    setPaint(null);
+  }
+  const [q, setQ] = useState('');
+  const has = (t: string) => value.some((v) => v.toLowerCase() === t.toLowerCase());
+  const shown = all.filter((t) => !has(t.name) && t.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const canCreate = !!q.trim() && !all.some((t) => t.name.toLowerCase() === q.trim().toLowerCase()) && !has(q.trim());
+  const add = (t: string) => {
+    onChange([...value, t.trim().slice(0, 30)]);
+    setQ('');
+  };
+  return (
+    <span className="tagpick">
+      {value.map((t) => (
+        <span key={t} className="tagchip">
+          <span className={`lbl ${tone(t)}`}>
+            {disabled ? t : <button type="button" className="lbl-name" title="Change colour" onClick={() => setPaint(paint === t ? null : t)}>{t}</button>}
+            {!disabled && <button type="button" className="lbl-x" aria-label={`Remove ${t}`} onClick={() => onChange(value.filter((v) => v !== t))}>×</button>}
+          </span>
+          {paint === t && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setPaint(null)} />
+              <div className="tagpaint" role="dialog" aria-label={`Colour for ${t}`}>
+                <div className="faint" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 6 }}>Colour for "{t}" · everywhere</div>
+                <div className="tagpaint-grid">
+                  {TAG_COLORS.map((name, i) => (
+                    <button key={name} type="button" className={`tagpaint-sw tone-${i} ${tone(t) === `tone-${i}` ? 'on' : ''}`} title={name} aria-label={name} onClick={() => setColor(t, i)} />
+                  ))}
+                </div>
+                <button type="button" className="btn ghost sm" style={{ width: '100%', justifyContent: 'center', marginTop: 6 }} onClick={() => setColor(t, -1)}>Automatic</button>
+              </div>
+            </>
+          )}
+        </span>
+      ))}
+      {!disabled && (
+        <span className="tagpick-add">
+          <button type="button" className="btn ghost sm" onClick={() => setOpen((v) => !v)}><Plus size={12} /> Tag</button>
+          {open && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => { setOpen(false); setQ(''); }} />
+              <div className="tagpop">
+                <input
+                  className="input"
+                  autoFocus
+                  value={q}
+                  maxLength={30}
+                  placeholder="Find or make a tag"
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const first = shown[0]?.name ?? (canCreate ? q.trim() : '');
+                      if (first) add(first);
+                    }
+                    if (e.key === 'Escape') setOpen(false);
+                  }}
+                />
+                <div className="tagpop-list">
+                  {shown.slice(0, 30).map((t) => (
+                    <button key={t.name} type="button" className="tagpop-opt" onClick={() => add(t.name)}>
+                      <span className={`lbl ${tone(t.name)}`}>{t.name}</span>
+                      <span className="faint">{t.n}</span>
+                    </button>
+                  ))}
+                  {canCreate && (
+                    <button type="button" className="tagpop-opt" onClick={() => add(q)}>
+                      <span className="row" style={{ gap: 6 }}><Plus size={12} /> Make <span className={`lbl ${tone(q.trim())}`}>{q.trim()}</span></span>
+                    </button>
+                  )}
+                  {!shown.length && !canCreate && <div className="faint" style={{ padding: '6px 8px', fontSize: 12 }}>{all.length ? 'No other tags' : 'Type to make the first tag'}</div>}
+                </div>
+              </div>
+            </>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** "- [ ] item" lines in a to-do's notes are its checklist. */
 function checklist(notes: string) {
@@ -47,6 +262,11 @@ export function BoardScreen() {
   const editable = canEdit(overview?.role);
   const [dragging, setDragging] = useState<Task | null>(null);
   const [adding, setAdding] = useState(false);
+  const [tagFilter, setTagFilter] = useState('');
+  PICKED = overview?.tagColors ?? {};
+  const boardBg = useBoardBackground();
+  const allTags = useAllTags(tasks.data);
+  const inGroup = (t: Task) => !tagFilter || tagsOf(t.area).some((x) => x.toLowerCase() === tagFilter.toLowerCase());
   const [activity, setActivity] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const key = ['p', slug, 'tasks'];
@@ -95,7 +315,7 @@ export function BoardScreen() {
   const stoppedTask = stoppedMine ? tasks.data?.find((t) => t.assignee.toLowerCase() === stoppedMine.label.toLowerCase() && t.status !== 'done') : undefined;
 
   return (
-    <div className="bwrap">
+    <div className={`bwrap ${boardBg ? 'has-bg' : ''}`} style={boardBg ? { background: boardBg } : undefined}>
       {menu && menuTask && <TaskMenu at={menu} task={menuTask} onClose={() => setMenu(null)} onOpen={(id) => { setActivity(false); go({ view: 'board', task: id }); }} />}
       <div className="strip">
         <span className="k">Right now</span>
@@ -108,8 +328,8 @@ export function BoardScreen() {
             return (
               <div key={c.id} className={`now ${stopped ? 'stopped' : ''}`}>
                 <span className={`dot ${stopped ? 'idle' : p === 'live' ? 'live' : 'away'}`} />
-                <Avatar label={c.label} bot={c.isAgent} size="sm" />
-                <b>{nameOf(c.label)}</b>
+                <Avatar label={c.label} bot={c.isAgent} size="sm" card />
+                <b>{nameOf(c.label) === c.label ? <PersonName label={c.label} /> : nameOf(c.label)}</b>
                 <span className="s">{stopped ? `Stopped ${ago(c.lastSeen, now)}` : c.doing || (c.lastReply ? 'Idle' : 'No task yet')}</span>
                 {stopped && stoppedTask && helpers[0] && c.id === stoppedMine?.id && (
                   <button type="button" className="linkbtn" onClick={() => go({ view: 'board', task: stoppedTask.id })}>Hand over</button>
@@ -130,7 +350,18 @@ export function BoardScreen() {
         </div>
       ))}
       <div className="bhead">
+        {allTags.length > 0 && (
+          <div className="tagfilter">
+            <button type="button" className={`tf ${!tagFilter ? 'on' : ''}`} onClick={() => setTagFilter('')}>All</button>
+            {allTags.slice(0, 12).map((t) => (
+              <button key={t.name} type="button" className={`tf ${tagFilter.toLowerCase() === t.name.toLowerCase() ? 'on' : ''}`} onClick={() => setTagFilter(tagFilter.toLowerCase() === t.name.toLowerCase() ? '' : t.name)}>
+                <span className={`tfdot lbl ${tone(t.name)}`} />{t.name}<span className="faint">{t.n}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <span className="grow" />
+        {(overview?.role === 'owner' || overview?.role === 'admin') && <BackgroundPicker />}
         <button type="button" className={`btn ${activity && !open ? '' : 'ghost'}`} onClick={() => { go({ view: 'board' }); setActivity((v) => !v); }}>
           <Activity size={14} /> Activity
         </button>
@@ -142,7 +373,7 @@ export function BoardScreen() {
       <DndContext sensors={sensors} onDragStart={(e) => setDragging(tasks.data?.find((t) => t.id === e.active.id) ?? null)} onDragEnd={(e: DragEndEvent) => { setDragging(null); if (e.over) move(String(e.active.id), e.over.id as TaskStatus); }} onDragCancel={() => setDragging(null)}>
         <div className={`cols ${sideOpen ? 'side-open' : ''}`}>
           {COLS.map((c) => (
-            <Column key={c.status} col={c} tasks={(tasks.data ?? []).filter((t) => t.status === c.status)} loading={tasks.isLoading} editable={editable} selected={route.task} onOpen={(id) => { setActivity(false); go({ view: 'board', task: id }); }} adding={c.status === 'todo' && adding} onAdded={() => setAdding(false)} agentFor={agentFor} now={now} nameOf={nameOf} />
+            <Column key={c.status} col={c} tasks={(tasks.data ?? []).filter((t) => t.status === c.status && inGroup(t))} loading={tasks.isLoading} editable={editable} selected={route.task} onOpen={(id) => { setActivity(false); go({ view: 'board', task: id }); }} adding={c.status === 'todo' && adding} onAdded={() => setAdding(false)} agentFor={agentFor} now={now} nameOf={nameOf} />
           ))}
         </div>
         <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
@@ -235,12 +466,13 @@ function Card({ task: t, agent, now, nameOf, selected, dragging }: { task: Task;
     <div className={`tcard2 ${selected ? 'sel' : ''} ${dragging ? 'dragging' : ''} ${t.status === 'done' ? 'isdone' : ''}`}>
       <div className="t">{t.title}</div>
       <div className="meta2">
-        {t.area && <span className={`lbl ${tone(t.area)}`}>{t.area.length > 22 ? `${t.area.slice(0, 21)}…` : t.area}</span>}
+        {tagsOf(t.area).slice(0, 3).map((tag) => <span key={tag} className={`lbl ${tone(tag)}`}>{tag.length > 18 ? `${tag.slice(0, 17)}…` : tag}</span>)}
+        {tagsOf(t.area).length > 3 && <span className="faint" style={{ fontSize: 11.5 }}>+{tagsOf(t.area).length - 3}</span>}
         {list.length > 0 && <span className="row" style={{ gap: 4 }}><CheckSquare size={12} />{done}/{list.length}</span>}
         {t.comments.length > 0 && <span className="row" style={{ gap: 4 }}><MessageSquare size={12} />{t.comments.length}</span>}
         <span className="r">{t.assignee ? <Avatar label={t.assignee} bot={/claude/i.test(t.assignee)} size="sm" /> : null}</span>
       </div>
-      {working && <div className="cstat ok"><span className="dot live" />{nameOf(agent.label)} is working on this</div>}
+      {working && <div className="cstat ok"><span className="dot live" />{nameOf(agent.label) === agent.label ? <PersonName label={agent.label} card={false} /> : nameOf(agent.label)} is working on this</div>}
       {stopped && <div className="cstat warn"><Pause size={12} />Stopped {ago(agent.lastSeen, now)}</div>}
     </div>
   );
@@ -276,8 +508,9 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
   const editable = canEdit(overview?.role);
   const [title, setTitle] = useState(task.title);
   const [assignee, setAssignee] = useState(task.assignee);
-  const [area, setArea] = useState(task.area);
-  useEffect(() => { setTitle(task.title); setAssignee(task.assignee); setArea(task.area); }, [task]);
+  useEffect(() => { setTitle(task.title); setAssignee(task.assignee); }, [task]);
+  const allTasks = useProjectQuery<Task[]>(['tasks'], `/api/projects/${slug}/tasks`);
+  const allTags = useAllTags(allTasks.data);
   const now = overview?.now ?? Date.now();
   const list = checklist(task.notes);
   const description = task.notes.split('\n').filter((l) => !/^\s*[-*]\s+\[( |x|X)\]/.test(l)).join('\n').trim();
@@ -317,8 +550,8 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
           <input className="input" style={{ height: 30 }} list="bt-people" value={assignee} disabled={!editable} onChange={(e) => setAssignee(e.target.value)} onBlur={() => assignee !== task.assignee && save({ assignee })} placeholder="Nobody yet" />
           <datalist id="bt-people">{people.map((p) => <option key={p} value={p} />)}</datalist>
         </span>
-        <span className="k">Label</span>
-        <input className="input" style={{ height: 30 }} value={area} disabled={!editable} onChange={(e) => setArea(e.target.value)} onBlur={() => area !== task.area && save({ area })} placeholder="e.g. Selling" />
+        <span className="k">Tags</span>
+        <TagPicker value={tagsOf(task.area)} all={allTags} disabled={!editable} onChange={(tags) => save({ area: joinTags(tags) })} />
       </div>
 
       {agent && (agent.doing || agent.lastReply) && task.status !== 'done' && (
@@ -352,7 +585,7 @@ function TaskPanel({ task, agent, helpers, onHandOver, nameOf }: { task: Task; a
       )}
       <Comments target={task.id} comments={task.comments} canComment={overview?.role !== 'viewer'} />
       {(overview?.role === 'owner' || overview?.role === 'admin') && <DeleteTask task={task} />}
-      <p className="faint" style={{ fontSize: 12, marginTop: 14 }}>Added by {task.created_by_name} · last change by {task.updated_by_name}, {ago(task.updated_at)}</p>
+      <p className="faint" style={{ fontSize: 12, marginTop: 14 }}>Added by <PersonName label={task.created_by_name} /> · last change by <PersonName label={task.updated_by_name} />, {ago(task.updated_at)}</p>
     </>
   );
 }
@@ -367,9 +600,9 @@ function ActivityList() {
       <AnimatePresence initial={false}>
         {(feed.data ?? []).slice(0, 50).map((r) => (
           <motion.div key={r.seq} layout="position" className="row" style={{ alignItems: 'flex-start', gap: 10, padding: '7px 0' }} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE_OUT } }}>
-            <Avatar label={r.label} bot={r.label.includes("'s ")} size="sm" />
+            <Avatar label={r.label} bot={r.label.includes("'s ")} size="sm" card />
             <div style={{ minWidth: 0 }}>
-              <div style={{ lineHeight: 1.4 }}><b style={{ fontWeight: 600 }}>{r.label}</b> <span className="muted">{r.text}</span></div>
+              <div style={{ lineHeight: 1.4 }}><b style={{ fontWeight: 600 }}><PersonName label={r.label} /></b> <span className="muted">{r.text}</span></div>
               <div className="faint" style={{ fontSize: 11.5 }}>{ago(r.at, now)}</div>
             </div>
           </motion.div>

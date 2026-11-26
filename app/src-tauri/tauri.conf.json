@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Baton",
   "mainBinaryName": "Baton",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "dev.ceo.baton",
   "build": {
     "frontendDist": "../dist",
@@ -30,12 +30,34 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "ceo",
     "shortDescription": "Shared workspace for people and their Claudes",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "windows": {
-      "nsis": { "installMode": "currentUser" }
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYxQjY0QUU0Q0NDNjhBNDgKUldSSWlzYk01RXEyOFRZakFQTXYxNnhlSVVFU1FXUEVWVll2Zmg3azNMSXpYemRQZlhjNEtqbmEK",
+      "endpoints": [
+        "https://github.com/ce017/baton/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

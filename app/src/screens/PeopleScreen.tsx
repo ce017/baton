@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Select } from '../Select.tsx';
-import { Download, Plug, Unplug } from 'lucide-react';
+import { ClipboardPaste, Download, HardDrive, Plug, Unplug } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call, isTauri, type Role, tauriInvoke, type TreeItem } from '../lib/api.ts';
@@ -31,8 +31,51 @@ export function PeopleScreen(_: { onCreateProject: () => void }) {
         {overview ? <Members /> : <Skel h={180} r={10} style={{ marginTop: 30 }} />}
         <InviteSection />
         <Skills />
+        {overview?.role === 'owner' && <DeleteProject />}
       </div>
     </div>
+  );
+}
+
+/** Owner only: deletes the project and everything in it, for everyone. */
+function DeleteProject() {
+  const { cfg, update } = useApp();
+  const { slug, overview } = useProject();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  async function del() {
+    try {
+      await call(cfg, 'POST', `/api/projects/${slug}/delete`, { confirm });
+      const me = await call<{ projects: { slug: string }[] }>(cfg, 'GET', '/api/me');
+      await update({ project: me.projects.find((p) => p.slug !== slug)?.slug });
+      qc.invalidateQueries();
+      toast(`Deleted ${overview?.project.name ?? slug}`);
+    } catch (err) {
+      toast((err as Error).message, false);
+    }
+  }
+  return (
+    <>
+      <h2 className="setsec">Delete project</h2>
+      <div className="setgroup">
+        <div className="setrow">
+          <div className="tx">
+            <div className="t">Delete {overview?.project.name ?? slug}</div>
+            <div className="d">Removes the project for everyone: to-dos, pages, chat, invites and jobs. Files on your PCs stay. This can't be undone.</div>
+          </div>
+          {!open && <div className="ctl"><button type="button" className="btn ghost sm danger" onClick={() => setOpen(true)}>Delete…</button></div>}
+        </div>
+        {open && (
+          <div className="setrow">
+            <input className="input grow" autoFocus value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={`Type ${slug} to confirm`} aria-label="Confirm the project name" />
+            <button type="button" className="btn ghost sm" onClick={() => setOpen(false)}>Cancel</button>
+            <button type="button" className="btn sm danger-solid" disabled={confirm.trim().toLowerCase() !== slug.toLowerCase()} onClick={del}>Delete forever</button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -72,7 +115,7 @@ function Members() {
           const editable = canManage && m.role !== 'owner' && (mine === 'owner' || m.role !== 'admin') && m.name !== cfg.user;
           return (
             <div key={m.name} className="setrow">
-              <Avatar label={profiles.data?.[m.name]?.display || m.name} color={profiles.data?.[m.name]?.color} />
+              <Avatar label={m.name} card />
               <div className="tx">
                 <div className="t">{profiles.data?.[m.name]?.display || m.name}{profiles.data?.[m.name]?.display && <span className="faint" style={{ fontWeight: 400 }}>@{m.name}</span>}{m.name === cfg.user && <span className="faint" style={{ fontWeight: 400 }}>you</span>}<Badges list={profiles.data?.[m.name]?.badges} max={3} /></div>
                 {profiles.data?.[m.name]?.status && <div className="d" style={{ color: 'var(--ink)' }}>{profiles.data[m.name]?.status}</div>}
@@ -220,12 +263,74 @@ export function ThisClaude() {
   );
 }
 
+interface LocalSkill {
+  folder: string;
+  body: string;
+  files: Record<string, string>;
+  skipped: string[];
+  fromBaton: boolean;
+}
+
+/** name and description from a SKILL.md's frontmatter. */
+function skillMeta(body: string): { name: string; description: string } {
+  const fm = /^---\s*\n([\s\S]*?)\n---/.exec(body.replace(/\r\n/g, '\n'))?.[1] ?? '';
+  const get = (k: string) => (new RegExp(`^${k}:\\s*(.*)$`, 'm').exec(fm)?.[1] ?? '').trim().replace(/^["']|["']$/g, '');
+  return { name: get('name'), description: get('description') };
+}
+
 function Skills() {
   const { cfg, slug } = useProject();
   const toast = useToast();
   const tree = useProjectQuery<TreeItem[]>(['tree'], `/api/projects/${slug}/tree`);
   const skills = (tree.data ?? []).filter((t) => t.kind === 'skill');
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'pc' | 'paste' | null>(null);
+  const [local, setLocal] = useState<LocalSkill[] | null>(null);
+  const [pasted, setPasted] = useState('');
+  const qc = useQueryClient();
+
+  async function share(body: string, folder: string, files: Record<string, string> = {}) {
+    const meta = skillMeta(body);
+    const name = (meta.name || folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!name) throw new Error('Give the skill a name: add "name: my-skill" at the top.');
+    const r = await call<{ message: string }>(cfg, 'POST', `/api/projects/${slug}/skills`, { name, body, summary: (meta.description || `Shared skill ${name}`).slice(0, 240), files });
+    qc.invalidateQueries({ queryKey: ['p', slug] });
+    return r.message;
+  }
+
+  async function openPc() {
+    setMode('pc');
+    try {
+      setLocal(await tauriInvoke<LocalSkill[]>('local_skills'));
+    } catch (err) {
+      toast(String((err as Error).message ?? err), false);
+    }
+  }
+
+  async function sharePc(k: LocalSkill) {
+    setBusy(true);
+    try {
+      toast(`${await share(k.body, k.folder, k.files)}${k.skipped.length ? ` Left out ${k.skipped.length} binary or big file${k.skipped.length === 1 ? '' : 's'}.` : ''}`);
+    } catch (err) {
+      toast(String((err as Error).message ?? err), false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sharePasted(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      toast(await share(pasted, ''));
+      setPasted('');
+      setMode(null);
+    } catch (err) {
+      toast(String((err as Error).message ?? err), false);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function install() {
     setBusy(true);
@@ -243,10 +348,61 @@ function Skills() {
     <>
       <h2 className="setsec">
         Shared skills
-        {isTauri && skills.length > 0 && (
-          <button type="button" className="btn ghost sm act" onClick={install} disabled={busy}><Download size={14} /> Install on this PC</button>
-        )}
+        <span className="act row" style={{ gap: 4 }}>
+          {isTauri && <button type="button" className="btn ghost sm" onClick={() => (mode === 'pc' ? setMode(null) : openPc())}><HardDrive size={14} /> Share from this PC</button>}
+          <button type="button" className="btn ghost sm" onClick={() => setMode(mode === 'paste' ? null : 'paste')}><ClipboardPaste size={14} /> Paste a skill</button>
+          {isTauri && skills.length > 0 && (
+            <button type="button" className="btn ghost sm" onClick={install} disabled={busy}><Download size={14} /> Install on this PC</button>
+          )}
+        </span>
       </h2>
+      {mode === 'pc' && (
+        <div className="setgroup" style={{ marginBottom: 10 }}>
+          {local === null ? (
+            <div className="setrow"><Skel h={36} r={8} /></div>
+          ) : local.filter((k) => !k.fromBaton).length ? (
+            local.filter((k) => !k.fromBaton).map((k) => {
+              const meta = skillMeta(k.body);
+              const name = meta.name || k.folder;
+              const have = skills.some((s) => s.title.toLowerCase() === name.toLowerCase() || s.path.toLowerCase().endsWith(`/${name.toLowerCase()}`));
+              return (
+                <div key={k.folder} className="setrow">
+                  <div className="tx">
+                    <div className="t">{name}</div>
+                    <div className="d truncate">{meta.description || 'No description'} · {Object.keys(k.files).length + 1} file{Object.keys(k.files).length ? 's' : ''}</div>
+                  </div>
+                  <div className="ctl">
+                    <button type="button" className="btn ghost sm" disabled={busy} onClick={() => sharePc(k)}>{have ? 'Update' : 'Share'}</button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="setrow">
+              <div className="tx">
+                <div className="t">No skills on this PC</div>
+                <div className="d">Claude Code keeps skills in .claude/skills in your user folder. Skills you installed from Baton aren't listed.</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {mode === 'paste' && (
+        <form className="setgroup" style={{ marginBottom: 10 }} onSubmit={sharePasted}>
+          <div className="setrow">
+            <div className="tx" style={{ display: 'grid', gap: 8 }}>
+              <label className="fl">
+                <span>Paste the whole SKILL.md (it starts with name: and description:)</span>
+                <textarea className="input mono" rows={8} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder={'---\nname: luau-style\ndescription: How we write Luau in Roll a Fish\n---\n\n# Luau style\n…'} />
+              </label>
+              <div className="row" style={{ justifyContent: 'flex-end' }}>
+                <button type="button" className="btn ghost" onClick={() => setMode(null)}>Cancel</button>
+                <button className="btn primary" disabled={busy || !pasted.trim()}>Share skill</button>
+              </div>
+            </div>
+          </div>
+        </form>
+      )}
       <div className="setgroup">
         {skills.length ? skills.map((s) => (
           <div key={s.path} className="setrow">
@@ -260,7 +416,7 @@ function Skills() {
           <div className="setrow">
             <div className="tx">
               <div className="t">No shared skills yet</div>
-              <div className="d">Share one with <span className="mono">baton skills push &lt;folder&gt;</span> so every Claude here gets the same know-how.</div>
+              <div className="d">Share one from this PC or paste its SKILL.md, so every Claude here gets the same know-how.</div>
             </div>
           </div>
         )}

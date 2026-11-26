@@ -9,11 +9,59 @@ export const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 export const EASE_IN = [0.7, 0, 0.84, 0] as const;
 export const EASE_MOVE = [0.65, 0, 0.35, 1] as const;
 
-export function Avatar({ label, bot, size, color }: { label: string; bot?: boolean; size?: 'sm' | 'lg'; color?: string }) {
-  const letter = label.trim()[0]?.toUpperCase() ?? '?';
+/** What the app knows about people's profiles: username → picture URL, display name, colour. */
+export interface PeopleInfo {
+  pics: Record<string, string>;
+  names: Record<string, string>;
+  colors: Record<string, string>;
+}
+const PeopleCtx = createContext<PeopleInfo>({ pics: {}, names: {}, colors: {} });
+export const PeopleProvider = PeopleCtx.Provider;
+export const usePeople = () => useContext(PeopleCtx);
+
+/** "boe" → owner boe; "boe's Scripting Claude" → owner boe, rest "Scripting Claude". */
+export function splitLabel(label: string): { owner: string; rest: string | null } {
+  const m = /^(.+?)'s (.+)$/.exec(label.trim());
+  return m?.[1] && m[2] ? { owner: m[1].toLowerCase(), rest: m[2] } : { owner: label.trim().toLowerCase(), rest: null };
+}
+
+/** A person's or Claude's label with the display name in place of the username ("Leo's Claude"). */
+export function usePersonLabel(label: string): string {
+  const { names } = useContext(PeopleCtx);
+  const { owner, rest } = splitLabel(label);
+  const shown = names[owner];
+  if (!shown) return label;
+  return rest ? `${shown}'s ${rest}` : shown;
+}
+
+/** Opens the profile card for whoever a label belongs to (Shell shows it). */
+export function openProfile(label: string, e: { clientX: number; clientY: number; stopPropagation(): void }) {
+  e.stopPropagation();
+  window.dispatchEvent(new CustomEvent('baton:profile', { detail: { name: splitLabel(label).owner, x: e.clientX, y: e.clientY } }));
+}
+
+/** A name that shows the display name and opens the profile card on click (card=false for plain text). */
+export function PersonName({ label, card = true }: { label: string; card?: boolean }) {
+  const shown = usePersonLabel(label);
+  if (!card) return <>{shown}</>;
   return (
-    <span className={`avatar ${size ?? ''} ${color ? 'colored' : ''}`} style={{ background: color || personColor(label) }} title={label}>
-      {letter}
+    <span className="pname" role="button" tabIndex={0} onClick={(e) => openProfile(label, e)} onKeyDown={(e) => { if (e.key === 'Enter') { const r = (e.target as HTMLElement).getBoundingClientRect(); openProfile(label, { clientX: r.left, clientY: r.bottom, stopPropagation: () => e.stopPropagation() }); } }}>
+      {shown}
+    </span>
+  );
+}
+
+export function Avatar({ label, bot, size, color, src, card }: { label: string; bot?: boolean; size?: 'sm' | 'lg'; color?: string; src?: string; card?: boolean }) {
+  const people = useContext(PeopleCtx);
+  const { owner } = splitLabel(label);
+  const shown = usePersonLabel(label);
+  const letter = shown.trim()[0]?.toUpperCase() ?? '?';
+  // A Claude shows its person's picture, with the Claude mark on it.
+  const img = src ?? people.pics[owner];
+  const tint = color || people.colors[owner];
+  return (
+    <span className={`avatar ${size ?? ''} ${tint ? 'colored' : ''} ${img ? 'pic' : ''} ${card ? 'clickable' : ''}`} style={{ background: tint || personColor(label) }} title={shown} onClick={card ? (e) => openProfile(label, e) : undefined}>
+      {img ? <img src={img} alt="" draggable={false} /> : letter}
       {bot && (
         <span className="bot" aria-label="Claude">
           <Bot size={8} strokeWidth={2.5} />

@@ -390,6 +390,101 @@ async fn run_wake(folder: String, prompt: String, max_turns: u32, may_edit: bool
     .map_err(|e| e.to_string())?
 }
 
+/// Hands a to-do to an existing Claude Code chat: resumes that session headless in its folder.
+#[tauri::command]
+async fn resume_chat(session: String, folder: String, prompt: String, max_turns: u32, may_edit: bool) -> Result<String, String> {
+    if !session.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || session.len() < 6 {
+        return Err("That chat id doesn't look right.".into());
+    }
+    let dir = PathBuf::from(&folder);
+    if folder.trim().is_empty() || !dir.is_dir() {
+        return Err(format!("The chat's folder \"{folder}\" doesn't exist on this PC."));
+    }
+    let tools = if may_edit { "Read,Glob,Grep,Edit,Write,MultiEdit,TodoWrite,mcp__baton" } else { "Read,Glob,Grep,TodoWrite,mcp__baton" };
+    let turns = max_turns.clamp(1, 200).to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = quiet("claude")
+            .current_dir(&dir)
+            .args(["-p", &prompt, "--resume", &session, "--max-turns", &turns, "--allowedTools", tools, "--output-format", "text"])
+            .output()
+            .map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() {
+            Ok(text)
+        } else {
+            let err = format!("{} {}", String::from_utf8_lossy(&out.stderr).trim(), text);
+            Err(err.trim().chars().take(400).collect())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn walk_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        if name == "node_modules" || name.starts_with(".git") {
+            continue;
+        }
+        if p.is_dir() {
+            walk_files(&p, out);
+        } else {
+            out.push(p);
+        }
+    }
+}
+
+/// The skills installed in this PC's Claude Code (~/.claude/skills), ready to share with the project.
+#[tauri::command]
+fn local_skills() -> Result<Value, String> {
+    let root = claude_dir().join("skills");
+    let text_ext = ["md", "txt", "lua", "luau", "json", "yml", "yaml", "toml", "js", "mjs", "ts", "tsx", "py", "css", "html", "csv"];
+    let mut list = Vec::new();
+    let Ok(rd) = fs::read_dir(&root) else { return Ok(Value::Array(list)) };
+    for e in rd.flatten() {
+        let dir = e.path();
+        let skill_md = dir.join("SKILL.md");
+        if !dir.is_dir() || !skill_md.is_file() {
+            continue;
+        }
+        let body = fs::read_to_string(&skill_md).unwrap_or_default();
+        let mut files = serde_json::Map::new();
+        let mut skipped = Vec::new();
+        let mut all = Vec::new();
+        walk_files(&dir, &mut all);
+        let mut total: u64 = 0;
+        for f in all {
+            let rel = f.strip_prefix(&dir).unwrap_or(&f).to_string_lossy().replace('\\', "/");
+            if rel == "SKILL.md" || rel == ".baton-skill.json" {
+                continue;
+            }
+            let size = fs::metadata(&f).map(|m| m.len()).unwrap_or(u64::MAX);
+            let ext = f.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if !text_ext.contains(&ext.as_str()) || size > 200_000 || total + size > 850_000 {
+                skipped.push(Value::String(rel));
+                continue;
+            }
+            match fs::read_to_string(&f) {
+                Ok(t) => {
+                    total += size;
+                    files.insert(rel, Value::String(t));
+                }
+                Err(_) => skipped.push(Value::String(rel)),
+            }
+        }
+        list.push(serde_json::json!({
+            "folder": e.file_name().to_string_lossy(),
+            "body": body,
+            "files": files,
+            "skipped": skipped,
+            "fromBaton": dir.join(".baton-skill.json").exists(),
+        }));
+    }
+    Ok(Value::Array(list))
+}
+
 /// When on, closing the window hides Baton to the tray so notifications keep coming.
 static CLOSE_TO_TRAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -412,6 +507,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -453,6 +550,8 @@ pub fn run() {
             connect_claude,
             disconnect_claude,
             install_skills,
+            local_skills,
+            resume_chat,
             set_close_to_tray,
             run_wake,
             vault_scan,

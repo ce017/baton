@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useApp } from '../main.tsx';
 import { call } from '../lib/api.ts';
 import { ago, ownerName, presence, yourLabel } from '../lib/format.ts';
-import { Avatar, EASE_OUT, Empty, Skel, useToast } from '../ui.tsx';
+import { Avatar, EASE_OUT, Empty, Skel, useToast, PersonName } from '../ui.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
 interface Conv {
@@ -121,10 +121,10 @@ export function MessagesScreen() {
             <AnimatePresence initial={false}>
               {thread.data.map((m) => (
                 <motion.div key={m.seq} className={`msg2 ${m.mine && !m.fromAgent ? 'me' : ''}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE_OUT } }}>
-                  {!(m.mine && !m.fromAgent) && <Avatar label={m.from_label} bot={m.fromAgent} />}
+                  {!(m.mine && !m.fromAgent) && <Avatar label={m.from_label} bot={m.fromAgent} card />}
                   <div style={{ minWidth: 0 }}>
                     <div className="who">
-                      <b>{m.mine && !m.fromAgent ? 'You' : m.mine ? yourLabel(m.from_label) : m.from_label}</b>
+                      <b>{m.mine && !m.fromAgent ? 'You' : m.mine ? yourLabel(m.from_label) : <PersonName label={m.from_label} />}</b>
                       {m.kind !== 'fyi' && <span className={`kindtag ${m.kind}`}>{m.kind === 'handoff' ? 'hand-over' : m.kind}</span>}
                       <span className="t">{ago(m.at, now)}</span>
                     </div>
@@ -157,7 +157,7 @@ export function MessagesScreen() {
                 {matches.map((m, i) => (
                   <div key={m.name} className={`pi ${i === sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onMouseDown={(e) => { e.preventDefault(); pick(m.name); }}>
                     <Avatar label={m.name} bot={m.bot} size="sm" />
-                    {ownerName(m.name) === me && m.bot ? yourLabel(m.name) : m.name}
+                    {ownerName(m.name) === me && m.bot ? yourLabel(m.name) : <PersonName label={m.name} card={false} />}
                     <span className="s"><span className={`dot ${m.status === 'live' ? 'live' : m.status === 'idle' ? 'idle' : 'away'}`} style={{ display: 'inline-block', marginRight: 5 }} />{m.status === 'live' ? 'Active' : m.status === 'idle' ? 'Idle' : 'Away'}</span>
                   </div>
                 ))}
@@ -196,8 +196,8 @@ function ConvRow({ c, on, onClick, icon, now }: { c: Conv; on: boolean; onClick:
     <button type="button" className={`conv ${on ? 'on' : ''}`} onClick={onClick}>
       {icon}
       <div className="grow" style={{ minWidth: 0 }}>
-        <div className="nm">{c.name}</div>
-        <div className="pv">{c.last ? `${c.last.from_label}: ${c.last.text}` : 'No messages yet'}</div>
+        <div className="nm"><PersonName label={c.name} card={false} /></div>
+        <div className="pv">{c.last ? <><PersonName label={c.last.from_label} card={false} />: {c.last.text}</> : 'No messages yet'}</div>
       </div>
       {c.unread > 0 ? <span className="un">{c.unread}</span> : c.last ? <span className="faint" style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>{ago(c.last.at, now)}</span> : null}
     </button>

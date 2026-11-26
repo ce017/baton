@@ -380,6 +380,28 @@ export class DirectoryDO extends DurableObject<unknown> {
       this.sql.exec('ALTER TABLE users ADD COLUMN profile TEXT');
     } catch {}
     this.sql.exec('CREATE TABLE IF NOT EXISTS badges(user_id TEXT NOT NULL, badge TEXT NOT NULL, label TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, badge))');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS avatars(user_id TEXT PRIMARY KEY, mime TEXT NOT NULL, b64 TEXT NOT NULL, at INTEGER NOT NULL)');
+  }
+
+  /** Sets (or with an empty string removes) someone's profile picture: a small data: URL the app already shrank. */
+  async setAvatar(userId: string, dataUrl: string) {
+    if (!dataUrl) {
+      this.sql.exec('DELETE FROM avatars WHERE user_id = ?', userId);
+      return this.profileOf(userId);
+    }
+    const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!m?.[1] || !m[2]) throw new BatonError('The picture must be a PNG, JPEG or WebP image.');
+    if (m[2].length > 110_000) throw new BatonError('That picture is too big (80 KB at most after shrinking).');
+    this.sql.exec('INSERT OR REPLACE INTO avatars(user_id, mime, b64, at) VALUES (?, ?, ?, ?)', userId, m[1], m[2], Date.now());
+    return this.profileOf(userId);
+  }
+
+  async avatarOf(name: string): Promise<{ mime: string; b64: string; at: number } | null> {
+    return (
+      this.sql
+        .exec<{ mime: string; b64: string; at: number }>('SELECT a.mime, a.b64, a.at FROM avatars a JOIN users u ON u.id = a.user_id WHERE u.name = ?', name.toLowerCase())
+        .toArray()[0] ?? null
+    );
   }
 
   /** Badges are given by this server: earned ones are worked out here, special ones only its host can grant. */
@@ -404,7 +426,8 @@ export class DirectoryDO extends DurableObject<unknown> {
     try {
       p = JSON.parse(u.profile ?? '{}');
     } catch {}
-    return { name: u.name, display: p.display ?? '', about: p.about ?? '', color: p.color ?? '', status: p.status ?? '', badges: this.badgesOf(userId) };
+    const av = this.sql.exec<{ at: number }>('SELECT at FROM avatars WHERE user_id = ?', userId).toArray()[0];
+    return { name: u.name, display: p.display ?? '', about: p.about ?? '', color: p.color ?? '', status: p.status ?? '', avatar: av?.at ?? 0, badges: this.badgesOf(userId) };
   }
 
   async profilesByNames(names: string[]) {
@@ -441,6 +464,12 @@ export class DirectoryDO extends DurableObject<unknown> {
   }
 
   /** Deletes a person: keys, Claudes, emails, profile. Returns the projects they owned (to delete) and joined (to leave). */
+  /** Removes a project from the directory (memberships, invites, the slug). The caller wipes its data. */
+  async deleteProject(projectId: string): Promise<void> {
+    for (const t of ['user_projects', 'invites', 'email_invites']) this.sql.exec(`DELETE FROM ${t} WHERE project_id = ?`, projectId);
+    this.sql.exec('DELETE FROM projects WHERE id = ?', projectId);
+  }
+
   async deleteUser(userId: string): Promise<{ owned: string[]; joined: string[] }> {
     const owned = this.sql.exec<{ id: string }>('SELECT id FROM projects WHERE owner_id = ?', userId).toArray().map((r) => r.id);
     const joined = this.sql.exec<{ project_id: string }>('SELECT project_id FROM user_projects WHERE user_id = ?', userId).toArray().map((r) => r.project_id).filter((id) => !owned.includes(id));
@@ -450,7 +479,7 @@ export class DirectoryDO extends DurableObject<unknown> {
       this.sql.exec('DELETE FROM email_invites WHERE project_id = ?', id);
       this.sql.exec('DELETE FROM projects WHERE id = ?', id);
     }
-    for (const t of ['user_projects', 'agents', 'sessions', 'emails', 'login_links', 'badges']) this.sql.exec(`DELETE FROM ${t} WHERE user_id = ?`, userId);
+    for (const t of ['user_projects', 'agents', 'sessions', 'emails', 'login_links', 'badges', 'avatars']) this.sql.exec(`DELETE FROM ${t} WHERE user_id = ?`, userId);
     this.sql.exec('DELETE FROM users WHERE id = ?', userId);
     return { owned, joined };
   }

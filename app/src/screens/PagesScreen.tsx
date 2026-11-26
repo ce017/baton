@@ -10,7 +10,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { call, canEdit, isTauri, type Page, type TreeItem } from '../lib/api.ts';
 import { ago } from '../lib/format.ts';
-import { Avatar, EASE_IN, EASE_OUT, Empty, Skel, useToast } from '../ui.tsx';
+import { Avatar, EASE_IN, EASE_OUT, Empty, Skel, useToast, PersonName } from '../ui.tsx';
 import { useProject, useProjectQuery } from './Shell.tsx';
 
 interface Folder {
@@ -261,7 +261,7 @@ function PageView({ path, items }: { path: string; items: TreeItem[] }) {
         {p.kind !== 'page' && <span className="chip role">{p.kind}</span>}
         {p.pinned && <span className="chip role"><Star size={10} fill="currentColor" /> pinned in every brief</span>}
         <span className="row" style={{ gap: 6 }}>
-          <Avatar label={p.updatedBy} bot={p.updatedBy.includes("'s ")} size="sm" /> {p.updatedBy}
+          <Avatar label={p.updatedBy} bot={p.updatedBy.includes("'s ")} size="sm" card /> <PersonName label={p.updatedBy} />
         </span>
         <span>{ago(p.updatedAt)}</span>
         <span>v{p.version}</span>
@@ -326,10 +326,10 @@ export function Comments({ target, comments, canComment }: { target: string; com
       <h2 className="section-title">Comments {comments.length ? <span className="faint">{comments.length}</span> : null}</h2>
       {comments.map((c, i) => (
         <div key={`${c.at}-${i}`} className="comment">
-          <Avatar label={c.by_name} bot={c.by_name.includes("'s ")} />
+          <Avatar label={c.by_name} bot={c.by_name.includes("'s ")} card />
           <div>
             <div className="row" style={{ gap: 6 }}>
-              <b style={{ fontWeight: 500 }}>{c.by_name}</b>
+              <b style={{ fontWeight: 500 }}><PersonName label={c.by_name} /></b>
               <span className="faint" style={{ fontSize: 12 }}>{ago(c.at)}</span>
             </div>
             <div className="selectable" style={{ whiteSpace: 'pre-wrap' }}>{c.text}</div>

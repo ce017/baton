@@ -63,7 +63,7 @@ async function withJob(req: Request, obj: DurableObjectStub<ProjectDO>, actor: A
       return '';
     }
   };
-  const job = await obj.jobFor(actor, session, { cwd: dec('x-baton-cwd'), title: dec('x-baton-title') });
+  const job = await obj.jobFor(actor, session, { cwd: dec('x-baton-cwd'), title: dec('x-baton-title'), name: dec('x-baton-name') });
   return job ? { ...actor, job } : actor;
 }
 
@@ -123,6 +123,15 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/') return text('Baton server. Connect a Claude at /mcp with an agent key.');
   if (path === '/health') return json({ ok: true });
 
+  // Profile pictures are public by name, so <img> tags can load them without a key.
+  const avm = /^\/api\/avatars\/([a-z0-9_-]{2,32})$/.exec(path);
+  if (avm?.[1] && method === 'GET') {
+    const av = await directory(env).avatarOf(avm[1]);
+    if (!av) return new Response('No picture', { status: 404, headers: { 'access-control-allow-origin': '*' } });
+    const bytes = Uint8Array.from(atob(av.b64), (c) => c.charCodeAt(0));
+    return new Response(bytes, { headers: { 'content-type': av.mime, 'cache-control': 'public, max-age=86400', 'access-control-allow-origin': '*' } });
+  }
+
   if (path === '/mcp') {
     const who = await identify(req, env);
     const actor = toActor(who);
@@ -167,6 +176,11 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/api/me/profile' && method === 'POST') {
     if (who.agentId) throw new BatonError('Use your own sign-in to edit your profile.', 403);
     return json(await dir.setProfile(who.userId, await body(req)));
+  }
+  if (path === '/api/me/avatar' && method === 'POST') {
+    if (who.agentId) throw new BatonError('Use your own sign-in to change your picture.', 403);
+    const b = await body<{ data?: string }>(req);
+    return json(await dir.setAvatar(who.userId, String(b.data ?? '')));
   }
   if (path === '/api/me/delete' && method === 'POST') {
     if (who.agentId) throw new BatonError('Use your own sign-in to delete your account.', 403);
@@ -245,7 +259,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return text(await obj.event(await withJob(req, obj, actor), { kind: b.kind, text: String(b.text ?? '') }));
   }
 
-  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites|profiles)$/.exec(path);
+  const pm = /^\/api\/projects\/([a-z0-9_-]+)\/(members|feed|skills|import|overview|tree|page|tasks|messages|conversations|chat|post|comment|status|ticket|jobs|chatjob|notices|wake|wakes|wake-opt|wake-claim|wake-finish|invites|invite-revoke|email-invites|profiles|dispatch-claim|dispatch-finish|delete|background|tag-color)$/.exec(path);
   if (pm?.[1] && pm[2]) {
     const { obj, ref } = await resolveProject(env, who, pm[1]);
     const what = pm[2];
@@ -266,8 +280,24 @@ async function route(req: Request, env: Env): Promise<Response> {
       return json(await obj.notices(actor, Number.isFinite(after) ? after : -1));
     }
     if (what === 'jobs' && method === 'GET') return json(await obj.jobs(actor));
+    if (what === 'tag-color' && method === 'POST') return json(await obj.setTagColor(actor, await body<{ tag?: string; color?: number }>(req)));
+    if (what === 'background' && method === 'GET') return json(await obj.background(actor));
+    if (what === 'background' && method === 'POST') return json(await obj.setBackground(actor, await body<{ preset?: string; data?: string }>(req)));
+    if (what === 'dispatch-claim' && method === 'POST') return json(await obj.claimDispatch(actor, String((await body<{ id: string }>(req)).id ?? '')));
+    if (what === 'dispatch-finish' && method === 'POST') {
+      const b = await body<{ id: string; status?: string; result?: string }>(req);
+      return json(await obj.finishDispatch(actor, String(b.id ?? ''), b));
+    }
+    if (what === 'delete' && method === 'POST') {
+      await obj.assertOwner(actor);
+      const b = await body<{ confirm?: string }>(req);
+      if ((b.confirm ?? '').trim().toLowerCase() !== ref.slug.toLowerCase()) throw new BatonError(`Type ${ref.slug} to confirm.`);
+      await dir.deleteProject(ref.id);
+      await obj.wipe();
+      return json({ ok: true });
+    }
     if (what === 'jobs' && method === 'POST') {
-      const b = await body<{ id?: string; name?: string; instructions?: string; labels?: string[]; delete?: string }>(req);
+      const b = await body<{ id?: string; name?: string; instructions?: string; labels?: string[]; kind?: string; auto?: boolean; delete?: string }>(req);
       return json(b.delete ? await obj.deleteJob(actor, String(b.delete)) : await obj.saveJob(actor, b));
     }
     if (what === 'chatjob' && method === 'POST') {

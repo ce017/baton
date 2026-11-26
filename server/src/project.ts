@@ -67,7 +67,16 @@ export interface SkillArgs {
   files?: Record<string, string>;
 }
 
-type JobRow = { id: string; user_id: string; name: string; instructions: string; labels: string; updated_at: number };
+type JobRow = { id: string; user_id: string; name: string; instructions: string; labels: string; updated_at: number; kind: string; auto: number };
+type OwnedJob = JobRow & { owner: string };
+type DispatchRow = { id: string; user_id: string; job_id: string; session: string; cwd: string; task: string; text: string; status: string; result: string; created_at: number; updated_at: number };
+
+/** Whole-word match of a label in some text ("ui" fits "Fix the UI", not "build"). */
+function hasWord(text: string, label: string): boolean {
+  const norm = (x: string) => ` ${x.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const l = norm(label).trim();
+  return !!l && norm(text).includes(` ${l} `);
+}
 
 function parseList(json: string): string[] {
   try {
@@ -164,6 +173,17 @@ export class ProjectDO extends DurableObject<unknown> {
     // Claude jobs: a person's named roles for their Claude chats, and which chat has which job.
     this.sql.exec('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, instructions TEXT NOT NULL, labels TEXT NOT NULL, updated_at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS chats(session TEXT PRIMARY KEY, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, job_id TEXT, title TEXT NOT NULL, cwd TEXT NOT NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL)');
+    for (const col of ["kind TEXT NOT NULL DEFAULT 'worker'", 'auto INTEGER NOT NULL DEFAULT 0']) {
+      try {
+        this.sql.exec(`ALTER TABLE jobs ADD COLUMN ${col}`);
+      } catch {
+        /* already there */
+      }
+    }
+    // A to-do handed to a job's chat; the owner's desktop app picks it up and resumes that chat.
+    this.sql.exec(
+      'CREATE TABLE IF NOT EXISTS dispatches(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, job_id TEXT NOT NULL, session TEXT NOT NULL, cwd TEXT NOT NULL, task TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+    );
   }
 
   // ---------------------------------------------------------------- setup & roles
@@ -696,7 +716,8 @@ export class ProjectDO extends DurableObject<unknown> {
         id, n, title, a.status ?? 'todo', clip(a.assignee, 60), clip(a.area, 120), a.notes ?? '', label, label, now,
       );
       this.log(actor, 'task', `added ${id} ${title}`, id);
-      return `Added ${id}.`;
+      const to = this.routeTask(actor, id, title, clip(a.area, 120), clip(a.assignee, 60));
+      return to ? `Added ${id} and handed it to ${to}.` : `Added ${id}.`;
     }
     const id = (a.id ?? '').toUpperCase().replace(/^(\d+)$/, 'T-$1');
     const t = this.sql.exec<{ title: string; status: string }>('SELECT title, status FROM tasks WHERE id = ?', id).toArray()[0];
@@ -709,6 +730,8 @@ export class ProjectDO extends DurableObject<unknown> {
     );
     const what = a.status && a.status !== t.status ? `moved ${id} to ${a.status}` : `updated ${id}`;
     this.log(actor, 'task', `${what}: ${a.title ?? t.title}`, id);
+    if (a.assignee) this.routeTask(actor, id, a.title ?? t.title, '', clip(a.assignee, 60));
+    if (a.status === 'done' && t.status !== 'done') this.tellManagers(actor, id, a.title ?? t.title);
     return `${what[0]?.toUpperCase()}${what.slice(1)}.`;
   }
 
@@ -929,6 +952,8 @@ export class ProjectDO extends DurableObject<unknown> {
     const count = (q: string) => this.sql.exec<{ c: number }>(q).one().c;
     return {
       project: { slug: this.meta('slug') ?? '', name: this.meta('name') ?? '' },
+      background: { kind: this.meta('bg_kind') ?? '', preset: this.meta('bg_kind') === 'preset' ? (this.meta('bg') ?? '') : '', at: Number(this.meta('bg_at') ?? 0) },
+      tagColors: this.tagColors(),
       role,
       me: actorId(actor),
       members: this.memberRows(),
@@ -1196,6 +1221,56 @@ export class ProjectDO extends DurableObject<unknown> {
 
   // ---------------------------------------------------------------- internals
 
+  private tagColors(): Record<string, number> {
+    try {
+      return JSON.parse(this.meta('tag_colors') ?? '{}') as Record<string, number>;
+    } catch {
+      return {};
+    }
+  }
+
+  /** Picks a tag's colour for everyone (0-9), or back to automatic with -1. */
+  async setTagColor(actor: Actor, b: { tag?: string; color?: number }) {
+    this.need(actor, 'member');
+    const tag = String(b.tag ?? '').trim().toLowerCase().slice(0, 30);
+    if (!tag) throw new BatonError('Which tag?');
+    const color = Number(b.color);
+    const all = this.tagColors();
+    if (Number.isInteger(color) && color >= 0 && color <= 9) all[tag] = color;
+    else delete all[tag];
+    if (Object.keys(all).length > 300) throw new BatonError('Too many tag colours.');
+    this.setMeta('tag_colors', JSON.stringify(all));
+    this.broadcast('tasks');
+    return { tagColors: all };
+  }
+
+  /** The board's background image (presets travel in the overview). */
+  async background(actor: Actor) {
+    this.need(actor, 'viewer');
+    return { kind: this.meta('bg_kind') ?? '', data: this.meta('bg_kind') === 'image' ? (this.meta('bg') ?? '') : '', at: Number(this.meta('bg_at') ?? 0) };
+  }
+
+  /** Owners and admins set the board background for everyone: a preset, an image (data: URL), or none. */
+  async setBackground(actor: Actor, b: { preset?: string; data?: string }) {
+    this.need(actor, 'admin');
+    if (b.data) {
+      if (!/^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(b.data)) throw new BatonError('The background must be a JPEG, WebP or PNG image.');
+      if (b.data.length > 1_400_000) throw new BatonError('That image is too big (about 1 MB at most after shrinking).');
+      this.setMeta('bg_kind', 'image');
+      this.setMeta('bg', b.data);
+    } else if (b.preset && b.preset !== 'none') {
+      if (!/^[a-z]{2,20}$/.test(b.preset)) throw new BatonError('Unknown background.');
+      this.setMeta('bg_kind', 'preset');
+      this.setMeta('bg', b.preset);
+    } else {
+      this.setMeta('bg_kind', '');
+      this.setMeta('bg', '');
+    }
+    this.setMeta('bg_at', String(Date.now()));
+    this.log(actor, 'board', 'changed the board background', '');
+    return this.background(actor);
+  }
+
   private meta(k: string): string | undefined {
     return this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', k).toArray()[0]?.v;
   }
@@ -1313,16 +1388,18 @@ export class ProjectDO extends DurableObject<unknown> {
 
   // ---------------------------------------------------------------- Claude jobs (one job per native Claude chat)
   /** Records that a chat (Claude Code session) is working here and returns its job, if it has one. */
-  async jobFor(actor: Actor, session: string, info: { cwd?: string; title?: string } = {}): Promise<string | null> {
+  async jobFor(actor: Actor, session: string, info: { cwd?: string; title?: string; name?: string } = {}): Promise<string | null> {
     this.need(actor, 'member');
     if (!actor.agentId) return null;
     const now = Date.now();
+    // The chat's own name (from Claude Code) wins; the first prompt is only a stand-in until it has one.
+    const name = clip(info.name ?? '', 80);
     this.sql.exec(
       `INSERT INTO chats(session, user_id, agent_id, job_id, title, cwd, first_seen, last_seen) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
        ON CONFLICT(session) DO UPDATE SET last_seen = excluded.last_seen,
-         title = CASE WHEN chats.title = '' THEN excluded.title ELSE chats.title END,
+         title = CASE WHEN ? != '' THEN ? WHEN chats.title = '' THEN excluded.title ELSE chats.title END,
          cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE chats.cwd END`,
-      session, actor.userId, actor.agentId, clip(info.title ?? '', 80), clip(info.cwd ?? '', 200), now, now,
+      session, actor.userId, actor.agentId, name || clip(info.title ?? '', 80), clip(info.cwd ?? '', 200), now, now, name, name,
     );
     const row = this.sql
       .exec<{ name: string }>('SELECT j.name FROM chats c JOIN jobs j ON j.id = c.job_id WHERE c.session = ? AND c.user_id = ?', session, actor.userId)
@@ -1366,12 +1443,16 @@ export class ProjectDO extends DurableObject<unknown> {
       .toArray();
     return {
       now: Date.now(),
-      jobs: jobs.map((j) => ({ id: j.id, name: j.name, instructions: j.instructions, labels: parseList(j.labels), updatedAt: j.updated_at })),
+      jobs: jobs.map((j) => ({ id: j.id, name: j.name, instructions: j.instructions, labels: parseList(j.labels), kind: j.kind === 'manager' ? 'manager' : 'worker', auto: !!j.auto, updatedAt: j.updated_at })),
       chats,
+      dispatches: this.sql
+        .exec<DispatchRow>('SELECT * FROM dispatches WHERE user_id = ? ORDER BY created_at DESC LIMIT 15', actor.userId)
+        .toArray()
+        .map((d) => ({ id: d.id, job: jobs.find((j) => j.id === d.job_id)?.name ?? '', session: d.session, cwd: d.cwd, task: d.task, text: d.text, status: d.status, result: d.result, createdAt: d.created_at })),
     };
   }
 
-  async saveJob(actor: Actor, a: { id?: string; name?: string; instructions?: string; labels?: string[] }) {
+  async saveJob(actor: Actor, a: { id?: string; name?: string; instructions?: string; labels?: string[]; kind?: string; auto?: boolean }) {
     this.need(actor, 'member');
     if (actor.agentId) throw new BatonError('People set up jobs, not their Claudes.', 403);
     const name = cleanJob(a.name);
@@ -1379,16 +1460,18 @@ export class ProjectDO extends DurableObject<unknown> {
     const instructions = clip(a.instructions ?? '', 2000);
     const labels = (a.labels ?? []).map((l) => clip(String(l).trim(), 40)).filter(Boolean).slice(0, 12);
     assertNoSecret(name, instructions, labels.join(' '));
+    const kind = a.kind === 'manager' ? 'manager' : 'worker';
+    const auto = a.auto ? 1 : 0;
     const clash = this.sql.exec<{ id: string }>('SELECT id FROM jobs WHERE user_id = ? AND lower(name) = lower(?)', actor.userId, name).toArray()[0];
     if (clash && clash.id !== a.id) throw new BatonError(`You already have a job called ${name}.`, 409);
     const now = Date.now();
     if (a.id) {
       const cur = this.sql.exec<{ user_id: string }>('SELECT user_id FROM jobs WHERE id = ?', a.id).toArray()[0];
       if (!cur || cur.user_id !== actor.userId) throw new BatonError('No such job.', 404);
-      this.sql.exec('UPDATE jobs SET name = ?, instructions = ?, labels = ?, updated_at = ? WHERE id = ?', name, instructions, JSON.stringify(labels), now, a.id);
+      this.sql.exec('UPDATE jobs SET name = ?, instructions = ?, labels = ?, kind = ?, auto = ?, updated_at = ? WHERE id = ?', name, instructions, JSON.stringify(labels), kind, auto, now, a.id);
     } else {
       const id = `j_${crypto.randomUUID().slice(0, 8)}`;
-      this.sql.exec('INSERT INTO jobs(id, user_id, name, instructions, labels, updated_at) VALUES (?, ?, ?, ?, ?, ?)', id, actor.userId, name, instructions, JSON.stringify(labels), now);
+      this.sql.exec('INSERT INTO jobs(id, user_id, name, instructions, labels, kind, auto, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, actor.userId, name, instructions, JSON.stringify(labels), kind, auto, now);
     }
     this.broadcast('jobs');
     return this.jobs(actor);
@@ -1403,6 +1486,79 @@ export class ProjectDO extends DurableObject<unknown> {
     return this.jobs(actor);
   }
 
+  /** Hands a to-do to the job Claude whose labels fit it (or the one it was assigned to), and queues a run if that job starts itself. */
+  private routeTask(actor: Actor, id: string, title: string, area: string, assignee: string): string {
+    const jobs = this.sql
+      .exec<OwnedJob>("SELECT j.*, m.name AS owner FROM jobs j JOIN members m ON m.user_id = j.user_id WHERE j.kind != 'manager'")
+      .toArray()
+      .sort((x, y) => Number(y.user_id === actor.userId) - Number(x.user_id === actor.userId));
+    const labelOf = (j: OwnedJob) => `${j.owner}'s ${j.name} Claude`;
+    let job: OwnedJob | undefined;
+    if (assignee) job = jobs.find((j) => labelOf(j).toLowerCase() === assignee.toLowerCase());
+    else {
+      const tags = area.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+      job =
+        (tags.length ? jobs.find((j) => parseList(j.labels).some((l) => tags.includes(l.toLowerCase()))) : undefined) ??
+        jobs.find((j) => parseList(j.labels).some((l) => hasWord(`${area} ${title}`, l)));
+    }
+    if (!job) return '';
+    if (actor.job && job.user_id === actor.userId && actor.job.toLowerCase() === job.name.toLowerCase()) return labelOf(job); // it made it for itself
+    if (!assignee) this.sql.exec('UPDATE tasks SET assignee = ? WHERE id = ?', labelOf(job), id);
+    if (job.auto) {
+      this.dispatch(job, id, [
+        `Baton handed you ${id}, "${title}"${area ? ` (area ${area})` : ''}, because it fits your job (${job.name}).`,
+        `Start with baton_brief, set baton_status, move ${id} to doing, do the work, then move it to done with a short comment on what changed. Pass job: "${job.name}" in every baton_* call.`,
+      ].join('\n'));
+    }
+    return labelOf(job);
+  }
+
+  /** A to-do was finished: wake the managers that start themselves, so they can check it and plan what's next. */
+  private tellManagers(actor: Actor, id: string, title: string) {
+    const managers = this.sql.exec<OwnedJob>("SELECT j.*, m.name AS owner FROM jobs j JOIN members m ON m.user_id = j.user_id WHERE j.kind = 'manager' AND j.auto = 1").toArray();
+    for (const m of managers) {
+      if (actor.job && m.user_id === actor.userId && actor.job.toLowerCase() === m.name.toLowerCase()) continue;
+      this.dispatch(m, id, `${actorLabel(actor)} finished ${id}, "${title}". Check it with baton_task get, tell the team where things stand with baton_post, and hand the next to-dos to the job Claudes that fit. Pass job: "${m.name}" in every baton_* call.`);
+    }
+  }
+
+  private dispatch(job: JobRow, task: string, text: string) {
+    const chat = this.sql.exec<{ session: string; cwd: string }>('SELECT session, cwd FROM chats WHERE job_id = ? ORDER BY last_seen DESC LIMIT 1', job.id).toArray()[0];
+    if (!chat) return;
+    const dup = this.sql.exec<{ id: string }>("SELECT id FROM dispatches WHERE job_id = ? AND task = ? AND status IN ('pending', 'running')", job.id, task).toArray()[0];
+    if (dup) return;
+    const now = Date.now();
+    this.sql.exec(
+      "INSERT INTO dispatches(id, user_id, job_id, session, cwd, task, text, status, result, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)",
+      `d_${crypto.randomUUID().slice(0, 8)}`, job.user_id, job.id, chat.session, chat.cwd, task, clip(text, 2000), now, now,
+    );
+    this.broadcast('jobs');
+  }
+
+  /** The owner's desktop app claims a queued run before resuming the chat (only one PC gets it). */
+  async claimDispatch(actor: Actor, id: string) {
+    this.need(actor, 'member');
+    const d = this.sql.exec<DispatchRow>('SELECT * FROM dispatches WHERE id = ? AND user_id = ?', id, actor.userId).toArray()[0];
+    if (!d || d.status !== 'pending') throw new BatonError('That run was already taken.', 409);
+    this.sql.exec("UPDATE dispatches SET status = 'running', updated_at = ? WHERE id = ?", Date.now(), id);
+    this.broadcast('jobs');
+    return { ok: true };
+  }
+
+  async finishDispatch(actor: Actor, id: string, b: { status?: string; result?: string }) {
+    this.need(actor, 'member');
+    const status = ['done', 'failed', 'skipped'].includes(b.status ?? '') ? String(b.status) : 'done';
+    this.sql.exec('UPDATE dispatches SET status = ?, result = ?, updated_at = ? WHERE id = ? AND user_id = ?', status, clip(b.result ?? '', 600), Date.now(), id, actor.userId);
+    this.broadcast('jobs');
+    return { ok: true };
+  }
+
+  /** Only the owner can delete the whole project. */
+  async assertOwner(actor: Actor): Promise<void> {
+    if (actor.agentId) throw new BatonError('Use your own sign-in to delete a project.', 403);
+    this.need(actor, 'owner');
+  }
+
   /** The brief's opening lines for a Claude chat that has a job. */
   private jobBrief(actor: Actor): string[] {
     if (!actor.agentId || !actor.job) return [];
@@ -1412,6 +1568,11 @@ export class ProjectDO extends DurableObject<unknown> {
     const out = ['', `YOUR JOB: ${job.name} (set by ${actor.userName})`];
     if (job.instructions) out.push(job.instructions);
     if (labels.length) out.push(`Take to-dos labelled: ${labels.join(', ')}. Leave other to-dos to the Claude whose job fits.`);
+    if (job.kind === 'manager') {
+      const team = this.sql.exec<OwnedJob>("SELECT j.*, m.name AS owner FROM jobs j JOIN members m ON m.user_id = j.user_id WHERE j.kind != 'manager' ORDER BY m.name, j.name").toArray();
+      out.push('You are the MANAGER. Plan the work, split it into to-dos with baton_task (give each an area that matches a job\'s labels, or assign it straight to that Claude), keep the team updated with baton_post, and check finished to-dos. Do the work yourself only when no job fits.');
+      out.push(team.length ? `Job Claudes you can hand work to: ${team.map((t) => `${t.owner}'s ${t.name} Claude${parseList(t.labels).length ? ` (${parseList(t.labels).join(', ')})` : ''}`).join('; ')}.` : 'No other job Claudes yet: ask the team to give their chats jobs in Settings.');
+    }
     out.push(`Pass job: "${job.name}" in every baton_* tool call, so your updates show as ${actorLabel(actor)}.`);
     return out;
   }

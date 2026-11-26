@@ -131,6 +131,8 @@ export interface LiveCard {
 
 export interface Overview {
   project: { slug: string; name: string };
+  background?: { kind: '' | 'preset' | 'image'; preset: string; at: number };
+  tagColors?: Record<string, number>;
   role: Role;
   me: string;
   members: { name: string; role: Role }[];
