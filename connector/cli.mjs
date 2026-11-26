@@ -103,6 +103,16 @@ async function main() {
       const r = await api(cfg, 'POST', `/api/projects/${sub}/members`, { key: 'user', body: { user, role } });
       return out(r.message);
     }
+    case 'picture': {
+      // baton picture <file> [--project <slug>]: prints markdown that shows the picture in Baton.
+      if (!sub) throw new Error('Usage: baton picture <file> [--project <slug>]');
+      const bytes = readFileSync(sub);
+      const mime = bytes.subarray(0, 4).toString('hex') === '89504e47' ? 'image/png' : bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : bytes.subarray(0, 4).toString() === 'GIF8' ? 'image/gif' : bytes.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : '';
+      if (!mime) throw new Error('That file is not a PNG, JPEG, WebP or GIF picture.');
+      if (bytes.length > 1_800_000) throw new Error('That picture is too big (1.8 MB at most). Shrink it first.');
+      const r = await api(cfg, 'POST', '/api/images', { key: cfg.agentKey ? 'agent' : 'user', timeoutMs: 60000, body: { project: flag('project') ?? undefined, mime, name: basename(sub).replace(/\.[^.]+$/, ''), data: bytes.toString('base64') } });
+      return out(r.markdown);
+    }
     case 'brief': {
       const q = sub ? `?project=${encodeURIComponent(sub)}` : '';
       return out(await api(cfg, 'GET', `/api/brief${q}`, { key: cfg.agentKey ? 'agent' : 'user', raw: true }));

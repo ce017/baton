@@ -141,7 +141,7 @@ async function main() {
 
   if (event === 'SessionStart') {
     const brief = await api(cfg, 'GET', `/api/brief${q}`, { ...opts, raw: true });
-    inject(`${brief}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)`);
+    inject(`${brief}\n\nTo add a picture from this PC (a screenshot, render or reference) to a Baton note or message: run \`baton picture "<file path>" --project <the project slug this brief names>\`. It prints markdown like ![name](link): put that in the baton_write body or baton_post text.\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)`);
   } else if (event === 'UserPromptSubmit') {
     // "baton job Scripting" (or "baton job none") gives this chat a job.
     const pick = /^\s*\/?baton\s+job\b[\s:]*(.*?)\s*$/i.exec(input.prompt ?? '');

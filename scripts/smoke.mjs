@@ -383,6 +383,8 @@ check('jobs: people only see their own jobs and chats', boeList.jobs?.length ===
   check('pictures: only PNG, JPEG, WebP, GIF', svg.status === 400, JSON.stringify(svg.data));
   const served = await fetch(pic.data.url ?? `${SERVER}/i/x/0`);
   check('pictures: served by link without a key', served.status === 200 && served.headers.get('content-type') === 'image/png', String(served.status));
+  const byClaude = await rest('POST', '/api/images', ceoA, { project: slug, mime: 'image/png', data: dot, name: 'render' });
+  check('pictures: a Claude uploads from its PC', byClaude.status === 200 && byClaude.data.markdown?.includes(`/i/${slug}/`), JSON.stringify(byClaude.data));
 
   // ---- delete a project
   const dp = await mk('dp');

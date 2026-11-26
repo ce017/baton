@@ -283,6 +283,15 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json(r);
   }
 
+  // A Claude adds a picture from its PC (`Baton.exe --picture <file>`): project from the body, the chat or the default.
+  if (path === '/api/images' && method === 'POST') {
+    const b = await body<{ project?: string; mime?: string; name?: string; data?: string }>(req);
+    const { obj, ref } = await resolveProject(env, who, b.project, sessionOf(req));
+    const r = await obj.addImage(actor, b);
+    const link = `${url.origin}/i/${ref.slug}/${r.id}`;
+    return json({ ...r, url: link, markdown: `![${r.name}](${link})` });
+  }
+
   if (path === '/api/events' && method === 'POST') {
     const b = await body<{ project?: string; kind: 'edit' | 'reply' | 'session'; text: string }>(req);
     if (!['edit', 'reply', 'session'].includes(b.kind)) throw new BatonError('kind is edit, reply or session.');

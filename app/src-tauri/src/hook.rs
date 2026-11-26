@@ -71,7 +71,8 @@ fn handle(event: &str, input: &Value) -> Option<()> {
             inject(
                 event,
                 &format!(
-                    "{brief}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)"
+                    "{brief}\n\n{}\n\n(Baton brief, injected at session start. Keep your handoff current with baton_status.)",
+                    crate::picture::how_to()
                 ),
             );
         }

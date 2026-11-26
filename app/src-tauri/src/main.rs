@@ -8,5 +8,9 @@ fn main() {
         baton_lib::hook::run(&args[2]);
         return;
     }
+    // `Baton.exe --picture <file> [--project <slug>]`: a Claude adds a picture from this PC.
+    if args.len() >= 3 && args[1] == "--picture" {
+        std::process::exit(baton_lib::picture::run(&args[2..]));
+    }
     baton_lib::run();
 }
