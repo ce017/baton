@@ -616,3 +616,8 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 
 .chatsearch { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-3); }
 .chatsearch .input { height: 28px; width: 180px; font-weight: 400; }
+
+/* Update bar: the notes shrink, the buttons always stay visible */
+.updatebar { min-width: 0; overflow: hidden; }
+.updatebar > .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.updatebar > .btn { flex: none; }

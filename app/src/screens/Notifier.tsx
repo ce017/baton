@@ -216,7 +216,13 @@ export function UpdateNotice() {
         .then((r: { tag_name: string; html_url: string; body: string | null } | null) => {
           if (!r || !newer(r.tag_name, __APP_VERSION__)) return;
           if (localStorage.getItem('baton.update.dismissed') === r.tag_name) return;
-          const notes = (r.body ?? '').split('\n').map((l) => l.replace(/^[-*#\s]+/, '').trim()).filter(Boolean).slice(0, 3).join(' · ');
+          // Plain text from the release notes' first lines: no markdown marks, no "Small one/Big one" intro.
+          const notes = (r.body ?? '')
+            .split('\n')
+            .map((l) => l.replace(/^[-*#>\s]+/, '').replace(/[*_`]+/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim())
+            .filter((l) => l && !/^(small one|big one)/i.test(l))
+            .slice(0, 2)
+            .join(' · ');
           setRel({ tag: r.tag_name, url: r.html_url, notes });
           if (isTauri && !(document.visibilityState === 'visible' && document.hasFocus())) osNotify(`Baton ${r.tag_name} is out`, notes || 'A new version is ready to download.').catch(() => {});
         })
