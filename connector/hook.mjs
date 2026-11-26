@@ -5,8 +5,9 @@
 //   PostToolUse       → reports edited files / Studio edits to the live feed
 //   Stop              → stores the first lines of the last reply (part of the living handoff)
 // It never blocks Claude: every failure is silent and it always exits 0.
-import { closeSync, openSync, readSync, statSync } from 'node:fs';
-import { relative } from 'node:path';
+import { closeSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative } from 'node:path';
 import { api, loadConfig, projectFor } from './lib.mjs';
 
 const event = process.argv[2];
@@ -23,6 +24,22 @@ function readStdin() {
     process.stdin.on('error', () => resolve(data));
     setTimeout(() => resolve(data), 1500);
   });
+}
+
+/** True at most once every `secs` seconds per chat (a small stamp file in the temp folder). */
+function inboxDue(session, secs) {
+  if (!session) return false;
+  const stamp = join(tmpdir(), `baton-inbox-${String(session).replace(/[^\w-]/g, '').slice(0, 80)}`);
+  const now = Math.floor(Date.now() / 1000);
+  let last = 0;
+  try {
+    last = Number(readFileSync(stamp, 'utf8')) || 0;
+  } catch {}
+  if (now - last < secs) return false;
+  try {
+    writeFileSync(stamp, String(now));
+  } catch {}
+  return true;
 }
 
 function inject(text) {
@@ -146,10 +163,17 @@ async function main() {
   } else if (event === 'PostToolUse') {
     const target = editTarget(input, input.cwd);
     if (target) await api(cfg, 'POST', '/api/events', { ...opts, body: { project, kind: 'edit', text: target } });
+    // A busy Claude sees new messages between its steps (at most every 15 s).
+    if (inboxDue(input.session_id, 15)) inject(await api(cfg, 'GET', `/api/hook/inbox${q}`, { ...opts, raw: true }));
   } else if (event === 'Stop' || event === 'SubagentStop') {
     if (event === 'SubagentStop') return;
     const text = lastReply(input.transcript_path);
     if (text) await api(cfg, 'POST', '/api/events', { ...opts, body: { project, kind: 'reply', text } });
+    // About to stop with a message addressed to it: keep going long enough to answer.
+    if (input.stop_hook_active !== true) {
+      const urgent = await api(cfg, 'GET', `/api/hook/inbox${q}${q ? '&' : '?'}urgent=1`, { ...opts, raw: true });
+      if (String(urgent ?? '').trim()) process.stdout.write(JSON.stringify({ decision: 'block', reason: String(urgent) }));
+    }
   }
 }
 

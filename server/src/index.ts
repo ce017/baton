@@ -248,7 +248,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   if (path === '/api/hook/inbox' && method === 'GET') {
     const { obj } = await resolveProject(env, who, url.searchParams.get('project'), sessionOf(req));
-    return text(await obj.hookInbox(await withJob(req, obj, actor)));
+    return text(await obj.hookInbox(await withJob(req, obj, actor), url.searchParams.get('urgent') === '1'));
   }
 
   // A chat picks its job ("baton job Scripting" typed in Claude Code); the hook calls this.

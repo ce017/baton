@@ -182,7 +182,7 @@ function connect() {
   };
   add('SessionStart');
   add('UserPromptSubmit');
-  add('PostToolUse', 'Edit|Write|MultiEdit|NotebookEdit|mcp__Roblox_Studio__multi_edit|mcp__Roblox_Studio__execute_luau|mcp__Roblox_Studio__insert_asset');
+  add('PostToolUse'); // every tool: the hook checks for new messages at most every 15 s
   add('Stop');
   writeSettings(file, settings);
   console.log(`Hooks added to ${file}.`);

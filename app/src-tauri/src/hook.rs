@@ -141,18 +141,43 @@ fn handle(event: &str, input: &Value) -> Option<()> {
             inject(event, &text);
         }
         "PostToolUse" => {
-            let target = edit_target(input, cwd)?;
-            let _ = post(
-                "/api/events",
-                json!({ "project": project, "kind": "edit", "text": target }),
-            );
+            if let Some(target) = edit_target(input, cwd) {
+                let _ = post(
+                    "/api/events",
+                    json!({ "project": project, "kind": "edit", "text": target }),
+                );
+            }
+            // A busy Claude sees new messages between its steps (at most every 15 s).
+            if inbox_due(&session, 15) {
+                if let Some(text) = with(agent.get(&format!("{server}/api/hook/inbox{q}")))
+                    .call()
+                    .ok()
+                    .and_then(|r| r.into_string().ok())
+                {
+                    inject(event, &text);
+                }
+            }
         }
         "Stop" => {
-            let text = last_reply(input["transcript_path"].as_str()?)?;
-            let _ = post(
-                "/api/events",
-                json!({ "project": project, "kind": "reply", "text": text }),
-            );
+            if let Some(text) = input["transcript_path"].as_str().and_then(last_reply) {
+                let _ = post(
+                    "/api/events",
+                    json!({ "project": project, "kind": "reply", "text": text }),
+                );
+            }
+            // About to stop with a message addressed to it: keep going long enough to answer.
+            if input["stop_hook_active"].as_bool() != Some(true) {
+                let sep = if q.is_empty() { '?' } else { '&' };
+                let text = with(agent.get(&format!("{server}/api/hook/inbox{q}{sep}urgent=1")))
+                    .call()
+                    .ok()
+                    .and_then(|r| r.into_string().ok())
+                    .unwrap_or_default();
+                if !text.trim().is_empty() {
+                    let out = json!({ "decision": "block", "reason": text });
+                    let _ = write!(std::io::stdout(), "{out}");
+                }
+            }
         }
         _ => {}
     }
@@ -180,6 +205,25 @@ fn job_pick(prompt: &str) -> Option<String> {
             .trim()
             .to_string(),
     )
+}
+
+/// True at most once every `secs` seconds per chat (a small stamp file in the temp folder).
+fn inbox_due(session: &str, secs: u64) -> bool {
+    if session.is_empty() {
+        return false;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let safe: String = session.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(80).collect();
+    let stamp = std::env::temp_dir().join(format!("baton-inbox-{safe}"));
+    let last = std::fs::read_to_string(&stamp).ok().and_then(|t| t.trim().parse::<u64>().ok()).unwrap_or(0);
+    if now.saturating_sub(last) < secs {
+        return false;
+    }
+    let _ = std::fs::write(&stamp, now.to_string());
+    true
 }
 
 fn inject(event: &str, text: &str) {

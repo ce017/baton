@@ -631,14 +631,25 @@ export class ProjectDO extends DurableObject<unknown> {
   }
 
   /** For the UserPromptSubmit hook: new messages as a short block, or '' (costs no tokens then). */
-  async hookInbox(actor: Actor): Promise<string> {
+  /**
+   * New messages for a Claude, injected by its hooks. urgent: only when one of them is for it
+   * (mentions it, or was sent to its person directly), so a Claude about to stop answers first.
+   */
+  async hookInbox(actor: Actor, urgent = false): Promise<string> {
     if (!this.role(actor.userId)) return '';
     this.seen(actor);
     const rows = this.unread(actor, 5);
     if (!rows.length) return '';
+    const label = actorLabel(actor).toLowerCase();
+    const forMe = (m: { text: string; to_label: string }) => m.text.toLowerCase().includes(label) || (m.to_label !== 'everyone' && !!actor.agentId);
+    if (urgent && !rows.some(forMe)) return '';
     this.markRead(actor, rows);
     const now = Date.now();
-    return [`Baton (${this.meta('name')}): ${rows.length} new message${rows.length === 1 ? '' : 's'} for you. ${UNTRUSTED}`, ...rows.map((m) => this.formatMessage(m, now))].join('\n');
+    const lines = rows.map((m) => `${this.formatMessage(m, now)}${forMe(m) ? '  ← for you' : ''}`);
+    const ask = rows.some(forMe)
+      ? `Messages marked "for you" are addressed to you (${actorLabel(actor)}): answer them now with baton_post (to the sender, ref the message), in a line or two, then carry on with your work.`
+      : '';
+    return [`Baton (${this.meta('name')}): ${rows.length} new message${rows.length === 1 ? '' : 's'} for you. ${UNTRUSTED}`, ...lines, ask].filter(Boolean).join('\n');
   }
 
   async task(actor: Actor, a: TaskArgs): Promise<string> {

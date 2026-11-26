@@ -155,6 +155,48 @@ fn write_settings(settings: &Value) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+/// Baton's four Claude Code hooks (replacing any older Baton ones). PostToolUse runs after every
+/// tool so a busy Claude sees new messages between its steps (the hook itself checks at most every 15 s).
+fn install_hooks(settings: &mut Value, exe: &str) {
+    strip_baton(settings);
+    let hooks = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("hooks")
+        .or_insert_with(|| json!({}));
+    for event in ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop"] {
+        let group = json!({ "hooks": [{ "type": "command", "command": format!("\"{exe}\" --hook {event} --baton"), "timeout": 5 }] });
+        let list = hooks
+            .as_object_mut()
+            .unwrap()
+            .entry(event)
+            .or_insert_with(|| json!([]));
+        list.as_array_mut().unwrap().push(group);
+    }
+}
+
+/// On start: if this PC has Baton's hooks from an older version (PostToolUse only on edits, or an
+/// old Baton.exe path), rewrite them. Leaves settings alone when Claude isn't connected.
+fn refresh_hooks() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let exe = exe.to_string_lossy().to_string();
+    let mut settings = read_json(&settings_path());
+    let text = settings.to_string();
+    if !text.contains("--baton") {
+        return;
+    }
+    let post = &settings["hooks"]["PostToolUse"];
+    let old_matcher = post
+        .as_array()
+        .is_some_and(|groups| groups.iter().any(|g| g["matcher"].is_string() && g.to_string().contains("--baton")));
+    let wanted = format!("\"{exe}\" --hook PostToolUse --baton");
+    let other_exe = !text.contains(&serde_json::to_string(&wanted).unwrap_or_default().trim_matches('"').to_string());
+    if old_matcher || other_exe {
+        install_hooks(&mut settings, &exe);
+        let _ = write_settings(&settings);
+    }
+}
+
 #[tauri::command]
 fn connect_claude() -> Result<String, String> {
     let cfg = read_config();
@@ -174,34 +216,7 @@ fn connect_claude() -> Result<String, String> {
     if !settings.is_object() {
         settings = json!({});
     }
-    strip_baton(&mut settings);
-    let hooks = settings
-        .as_object_mut()
-        .unwrap()
-        .entry("hooks")
-        .or_insert_with(|| json!({}));
-    let add = |hooks: &mut Value, event: &str, matcher: Option<&str>| {
-        let mut group = json!({ "hooks": [{ "type": "command", "command": format!("\"{exe}\" --hook {event} --baton"), "timeout": 5 }] });
-        if let Some(m) = matcher {
-            group["matcher"] = json!(m);
-        }
-        let list = hooks
-            .as_object_mut()
-            .unwrap()
-            .entry(event)
-            .or_insert_with(|| json!([]));
-        list.as_array_mut().unwrap().push(group);
-    };
-    add(hooks, "SessionStart", None);
-    add(hooks, "UserPromptSubmit", None);
-    add(
-        hooks,
-        "PostToolUse",
-        Some(
-            "Edit|Write|MultiEdit|NotebookEdit|mcp__Roblox_Studio__multi_edit|mcp__Roblox_Studio__execute_luau|mcp__Roblox_Studio__insert_asset",
-        ),
-    );
-    add(hooks, "Stop", None);
+    install_hooks(&mut settings, &exe);
     write_settings(&settings)?;
 
     let _ = quiet("claude")
@@ -586,6 +601,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            refresh_hooks();
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
             let open = MenuItem::with_id(app, "open", "Open Baton", true, None::<&str>)?;
